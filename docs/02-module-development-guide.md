@@ -1,144 +1,73 @@
-# 02. 业务模块复制与新增开发指南
+# 02. 业务模块开发规范
 
-本模板中的 `internal/todo`（配合 `api/todo/v1` 和 `ent/schema/todo.go`）是标准的模块参考蓝本。AI 或开发者在新增业务模块（例如 `user` 模块）时，请严格按以下 6 个步骤复制与修改。
-
----
-
-## 步骤 1：定义 API Proto 契约 (`api/<module>/v1/`)
-
-创建 `api/user/v1/error_reason.proto` 和 `api/user/v1/user.proto`：
-
-- `go_package` 使用相对路径格式：`option go_package = "api/user/v1;v1";`
-- 定义资源错误原因枚举 `ErrorReason`（如 `USER_UNSPECIFIED`、`USER_NOT_FOUND`、`USER_INVALID_ARGUMENT`）。
-- 定义 RPC 服务 `UserService` 并添加 `google.api.http` 注解。
-- 生成代码：
-  ```bash
-  make api
-  ```
+新增或修改业务模块（以 `<module>` 为例，参考 `internal/todo`）必须遵循以下结构与步骤。
 
 ---
 
-## 步骤 2：定义数据库 Schema (`ent/schema/`)
+## 1. API 契约约束 (`api/<module>/v1/`)
 
-在 `ent/schema/user.go` 中新建 Schema：
-
-- 组合通用 Mixin：`IDMixin{}`（UUIDv7 主键）与 `TimeMixin{}`（`created_at` / `updated_at`）。
-- **边界提醒**：`ent/schema` **严禁** import `internal/...`。状态枚举等字段在 schema 中使用 `field.Int32("status").Default(1)` 等基础类型，在 `model` 层再转为 `biz` 的强类型枚举。
-- 生成 Ent 代码：
-  ```bash
-  make ent
-  ```
+- 每个模块在 `api/<module>/v1/` 下定义 `<module>.proto` 与 `error_reason.proto`。
+- `go_package` 统一使用相对路径：`option go_package = "api/<module>/v1;v1";`。
+- 修改后执行 `make api` 生成代码，严禁手改 `*.pb.go`。
 
 ---
 
-## 步骤 3：创建模块目录与四层代码 (`internal/<module>/`)
+## 2. 数据库 Schema 约束 (`ent/schema/`)
 
-复制 `internal/todo` 为 `internal/user`，包含以下固定结构：
+- 在 `ent/schema/<module>.go` 中定义表结构，复用 `IDMixin{}`（UUIDv7 主键）与 `TimeMixin{}`（`created_at` / `updated_at`）。
+- **禁止反向依赖**：`ent/schema` **严禁** import `internal/...`。状态枚举等字段在 schema 中使用 `field.Int32` 等基础类型，在 `model` 层再转为 `biz` 的领域类型。
+- 修改后执行 `make ent` 生成代码，严禁手改 `ent/` 下除 `schema/` 和 `generate.go` 以外的生成文件。
+
+---
+
+## 3. 模块内部四层约束 (`internal/<module>/`)
+
+每个模块固定由以下 4 个子包和 1 个根包组成，**严禁**在模块下创建其他子目录：
 
 ```text
-internal/user/
-├── user.go             # 导出 wire.ProviderSet
-├── biz/
-│   └── user.go         # DO 实体、UserRepo 接口、领域错误、UserUsecase
-├── model/
-│   ├── user.go         # 实现 biz.UserRepo（注入 *core/data.Data，使用 r.data.DB(ctx) 访问 ent）
-│   └── user_test.go    # 使用内存 SQLite 测试真实 Ent 查询
-├── service/
-│   ├── user.go         # 实现 v1.UserServiceServer，DTO <-> DO 转换
-│   └── user_test.go    # 使用 fakeUserRepo 测试 service 层逻辑
-└── server/
-    └── server.go       # 实现 core/server.Registrar 接口
+internal/<module>/
+├── <module>.go         # 唯一出口：导出 wire.ProviderSet
+├── biz/                # 领域对象 (DO)、Repo 接口、领域错误、Usecase
+├── model/              # Repo 实现（调用 core/data 与 ent，DO <-> PO 转换）
+├── service/            # 实现 api 接口（参数校验，DTO <-> DO 转换）
+└── server/             # 实现 core/server.Registrar（注册 HTTP/gRPC 路由）
 ```
 
-### 各层关键代码模板
+### 各层必须遵守的代码契约
 
-#### 1) `internal/user/biz/user.go`
-- 声明领域错误：`ErrUserNotFound = errors.NotFound(v1.ErrorReason_USER_NOT_FOUND.String(), "user not found")`
-- 声明 DO 结构体 `type User struct { ... }`
-- 声明仓储接口 `type UserRepo interface { ... }`
-- 实现 `type UserUsecase struct { repo UserRepo }` 与 `NewUserUsecase(repo UserRepo) *UserUsecase`
-
-#### 2) `internal/user/model/user.go`
-- 构造函数返回 `biz.UserRepo` 接口而非具体结构体：
-  ```go
-  func NewUserRepo(d *data.Data) biz.UserRepo {
-      return &userRepo{data: d}
-  }
-  ```
-- 所有查询通过 `r.data.DB(ctx).User...` 执行（这样当外层调用 `data.InTx` 时会自动走事务连接）。
-- 将 `ent.IsNotFound(err)` 映射为 `biz.ErrUserNotFound`，不向上层暴露 `ent` 错误类型。
-
-#### 3) `internal/user/service/user.go`
-- 内嵌 `v1.UnimplementedUserServiceServer`，注入 `*biz.UserUsecase`。
-- 负责入参校验与 DTO ↔ DO 转换。
-
-#### 4) `internal/user/server/server.go`
-- 实现 `core/server.Registrar` 接口，只注册路由，不创建 Server：
-  ```go
-  type Registrar struct {
-      svc *service.UserService
-  }
-  var _ coreserver.Registrar = (*Registrar)(nil)
-
-  func NewRegistrar(svc *service.UserService) *Registrar {
-      return &Registrar{svc: svc}
-  }
-  func (r *Registrar) RegisterHTTP(srv *http.Server) {
-      v1.RegisterUserServiceHTTPServer(srv, r.svc)
-  }
-  func (r *Registrar) RegisterGRPC(srv *grpc.Server) {
-      v1.RegisterUserServiceServer(srv, r.svc)
-  }
-  ```
-
-#### 5) `internal/user/user.go`
-- 汇总本模块的四层构造函数：
-  ```go
-  var ProviderSet = wire.NewSet(
-      model.NewUserRepo,
-      biz.NewUserUsecase,
-      service.NewUserService,
-      server.NewRegistrar,
-  )
-  ```
+1. **`biz`**
+   - 领域错误使用 `api/<module>/v1` 的 `ErrorReason` 定义（如 `errors.NotFound(v1.ErrorReason_XXX.String(), "...")`）。
+   - Repo 接口在此声明，入参与返回值只能是 DO 或基本类型。
+2. **`model`**
+   - 构造函数签名必须返回 `biz` 的 Repo 接口：`func New<Resource>Repo(d *data.Data) biz.<Resource>Repo`。
+   - 所有数据库读写必须通过 `r.data.DB(ctx)` 获取 `*ent.Client`（确保 `core/data.InTx` 事务上下文生效）。
+   - 必须将 `ent.IsNotFound(err)` 等底层存储错误转换为 `biz` 领域错误，严禁向上层暴露 `ent` 错误。
+3. **`service`**
+   - 内嵌 `v1.Unimplemented<Resource>ServiceServer`，仅依赖 `*biz.<Resource>Usecase`。
+   - 完成 DTO ↔ DO 转换，不写业务逻辑，不直接访问存储。
+4. **`server`**
+   - 实现 `core/server.Registrar` 接口（`RegisterHTTP` / `RegisterGRPC`）。
+   - 只将本模块的 `service` 注册到全局 Server，严禁在此新建端口或 Server 实例。
+5. **`<module>.go`**
+   - 仅汇总导出本模块的 `ProviderSet`：
+     ```go
+     var ProviderSet = wire.NewSet(
+         model.New<Resource>Repo,
+         biz.New<Resource>Usecase,
+         service.New<Resource>Service,
+         server.NewRegistrar,
+     )
+     ```
 
 ---
 
-## 步骤 4：在入口注册模块 (`cmd/<app>/`)
+## 4. 全局组装与校验 (`cmd/<app>/`)
 
-1. 在 `cmd/<app>/main.go` 的 `newRegistrars` 中加入新模块的 `*userserver.Registrar`：
-   ```go
-   func newRegistrars(
-       todoReg *todoserver.Registrar,
-       userReg *userserver.Registrar,
-   ) []coreserver.Registrar {
-       return []coreserver.Registrar{
-           todoReg,
-           userReg,
-       }
-   }
-   ```
-2. 在 `cmd/<app>/wire.go` 的 `wireApp` 中加入 `user.ProviderSet`：
-   ```go
-   panic(wire.Build(
-       coreserver.ProviderSet,
-       data.ProviderSet,
-       todo.ProviderSet,
-       user.ProviderSet,
-       newRegistrars,
-       newApp,
-   ))
-   ```
-3. 重新生成 Wire 代码：
+1. 在 `cmd/<app>/main.go` 的 `newRegistrars` 参数与返回切片中加入新模块的 `*<module>server.Registrar`。
+2. 在 `cmd/<app>/wire.go` 的 `wireApp` 中加入 `<module>.ProviderSet`。
+3. 执行生成与架构校验：
    ```bash
    make wire
+   make check
+   make test
    ```
-
----
-
-## 步骤 5：校验架构边界与运行测试
-
-```bash
-make check
-make test
-```

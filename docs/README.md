@@ -1,14 +1,12 @@
-# AI Agent Guidelines (AGENTS.md)
+# 架构与开发规范索引
 
-本文件定义了基于此 Kratos v3 模板开发时的硬性架构边界与模块规范。AI 助手（Claude Code / Cursor / Antigravity / Copilot 等）在生成、修改或复制模块代码时**必须**遵守本规范，所有详细说明均存放在 [`docs/`](./docs/) 目录下。
+本目录定义了项目的硬性架构边界、模块开发规范与基础设施扩展约束。在生成、修改或新增模块代码时**必须**遵守本目录下的规范。
 
-## 核心文档索引 (`docs/`)
+## 规范文档列表
 
-在进行任何开发或扩展前，请先阅读 [`docs/`](./docs/) 下的对应规范文件：
-
-- [`docs/01-architecture-and-boundaries.md`](./docs/01-architecture-and-boundaries.md)：目录分层职责（`pkg` / `ent` / `core` / `internal/<module>`）与硬性依赖边界规则（由 `test/arch` 强制校验）。
-- [`docs/02-module-development-guide.md`](./docs/02-module-development-guide.md)：如何以 `internal/todo` 为蓝本复制/新增一个业务模块（`api` -> `ent/schema` -> `internal/<module>/{biz,model,service,server}` -> `cmd/*/wire.go`）。
-- [`docs/03-core-and-extension-guide.md`](./docs/03-core-and-extension-guide.md)：如何在下游项目中按需扩展 `core`（中间件、数据库事务 `InTx`、Redis/注册中心等组件接入约定）与 `pkg`。
+- [`01-architecture-and-boundaries.md`](./01-architecture-and-boundaries.md)：目录职责与硬性依赖边界规则（由 `test/arch` 强制校验）。
+- [`02-module-development-guide.md`](./02-module-development-guide.md)：新增业务模块的标准结构与各层约束。
+- [`03-core-and-extension-guide.md`](./03-core-and-extension-guide.md)：`core` 与 `pkg` 的准入边界与扩展规范。
 
 ## 铁律速览（违反会导致 `make check` / `go test ./test/arch/...` 失败）
 
@@ -29,5 +27,5 @@
 ```bash
 make check   # 运行 go vet ./... 与 go test -v ./test/arch/...
 make test    # 运行全量单元测试与架构边界测试
-make run     # 本地启动服务 (go run ./cmd/... -conf ./configs)
+make run     # 本地启动服务
 ```

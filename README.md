@@ -9,7 +9,7 @@
 ## 使用模板创建新项目
 
 ```bash
-kratos new <your-project-name> -r https://github.com/liu-jiangyuan/kratos-template.git --branch dev
+kratos new <your-project-name> -r https://github.com/liu-jiangyuan/kratos-template.git
 ```
 
 `kratos new` 会自动：
@@ -29,7 +29,6 @@ make run
 ## 目录结构与职责边界
 
 ```text
-├── AGENTS.md / CLAUDE.md       # AI 助手入口规范（引导 AI 扫描 docs/ 下的架构与模块复制指南）
 ├── api/                        # Proto 契约与生成代码（对外可引用）
 │   └── todo/v1/
 ├── cmd/server/                 # 程序入口与 Wire 组装（kratos new 自动改名为 cmd/<项目名>）
@@ -42,7 +41,8 @@ make run
 │   ├── conf/                   #   conf.proto 配置结构与生成代码
 │   ├── server/                 #   创建全局唯一的 HTTP / gRPC Server，定义模块路由注册接口 Registrar
 │   └── data/                   #   数据库连接（ent.Client 构建、自动迁移、关闭、事务封装 InTx）
-├── docs/                       # Markdown 文档文件夹（架构规范、模块复制开发指南、扩展指南，供开发者与 AI 扫描）
+├── docs/                       # 架构边界、模块开发与扩展规范文档（供开发者与 AI 扫描）
+│   ├── README.md
 │   ├── 01-architecture-and-boundaries.md
 │   ├── 02-module-development-guide.md
 │   └── 03-core-and-extension-guide.md
@@ -60,18 +60,20 @@ make run
 ├── test/arch/                  # 架构与依赖边界自动化校验测试
 │   └── arch_test.go
 ├── Makefile                    # protoc / ent / wire / build / run / test / check 工具链
+├── README.md                   # 项目说明与文档入口
 └── go.mod
 ```
 
 ---
 
-## AI 辅助开发与文档 (`docs/`)
+## 架构边界与开发规范 (`docs/`)
 
-根目录提供了 `AGENTS.md` / `CLAUDE.md`，并将详细规范统一存放在 `docs/` 文件夹下，方便后续项目用 AI 复制模块或扩展开发时直接扫描：
+项目的硬性架构约束与开发指南统一存放在 [`docs/`](./docs/) 目录下（AI 辅助开发或新增模块前请先扫描 [`docs/README.md`](./docs/README.md)）：
 
+- [`docs/README.md`](./docs/README.md)：架构铁律速览与规范索引。
 - [`docs/01-architecture-and-boundaries.md`](./docs/01-architecture-and-boundaries.md)：目录分层职责与硬性依赖边界规则。
-- [`docs/02-module-development-guide.md`](./docs/02-module-development-guide.md)：如何以 `internal/todo` 为蓝本复制/新增一个业务模块。
-- [`docs/03-core-and-extension-guide.md`](./docs/03-core-and-extension-guide.md)：如何在下游项目中按需扩展 `core`（中间件、事务 `InTx`、Redis/注册中心接入约定）与 `pkg`。
+- [`docs/02-module-development-guide.md`](./docs/02-module-development-guide.md)：新增业务模块的标准结构与各层代码契约。
+- [`docs/03-core-and-extension-guide.md`](./docs/03-core-and-extension-guide.md)：`core` 与 `pkg` 的准入边界、事务 `InTx` 约束及基础设施扩展规范。
 
 ---
 
