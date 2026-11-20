@@ -13,6 +13,8 @@
 ├── core/                       # 核心基础设施库（与具体业务无关）
 │   ├── conf/                   #   配置 proto 定义与生成代码
 │   ├── data/                   #   数据库连接 (ent.Client)、事务封装 InTx
+│   ├── log/                    #   日志接口、自定义格式化器及 3 种输出实现（终端/文件/HTTP 日志数据库）
+│   ├── middleware/             #   通用中间件（如 requestid）
 │   └── server/                 #   全局唯一的 HTTP / gRPC Server，定义 Registrar 接口
 ├── ent/                        # Ent 根目录：统一存放所有表的 schema 与生成代码
 │   └── schema/

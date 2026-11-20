@@ -8,6 +8,7 @@ import "google/protobuf/duration.proto";
 message Bootstrap {
   Server server = 1;
   Data data = 2;
+  Log log = 3;
 }
 
 message Server {
@@ -45,4 +46,30 @@ message Data {
   }
   Database database = 1;
   Redis redis = 2;
+}
+
+message Log {
+  message File {
+    string path = 1;
+  }
+  message Database {
+    // HTTP API endpoint for log database (e.g. Elasticsearch, ZincSearch).
+    string endpoint = 1;
+    string method = 2;
+    map<string, string> headers = 3;
+    google.protobuf.Duration timeout = 4;
+  }
+  // Output driver: "console" (default), "file", or "database".
+  string driver = 1;
+  // Minimum log level: "debug", "info" (default), "warn", "error".
+  string level = 2;
+  // Log format: "text" (default), "json", or a custom template string
+  // such as "{time} [{level}] [req={request_id}] [trace={trace_id}] {caller} - {msg} {attrs}".
+  string format = 3;
+  // Time layout for formatted timestamps (defaults to time.RFC3339).
+  string time_format = 4;
+  // Whether to include source file:line in log records.
+  bool add_source = 5;
+  File file = 6;
+  Database database = 7;
 }

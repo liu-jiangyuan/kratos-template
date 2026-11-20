@@ -6,15 +6,15 @@ import (
 	"os"
 
 	"github.com/liu-jiangyuan/kratos-template/core/conf"
+	corelog "github.com/liu-jiangyuan/kratos-template/core/log"
 	coreserver "github.com/liu-jiangyuan/kratos-template/core/server"
 	todoserver "github.com/liu-jiangyuan/kratos-template/internal/todo/server"
-
 
 	"github.com/go-kratos/kratos/v3"
 	"github.com/go-kratos/kratos/v3/config"
 	"github.com/go-kratos/kratos/v3/config/env"
 	"github.com/go-kratos/kratos/v3/config/file"
-	"github.com/go-kratos/kratos/v3/log"
+	kratoslog "github.com/go-kratos/kratos/v3/log"
 	"github.com/go-kratos/kratos/v3/transport/grpc"
 	"github.com/go-kratos/kratos/v3/transport/http"
 
@@ -59,17 +59,6 @@ func newApp(logger *slog.Logger, gs *grpc.Server, hs *http.Server) *kratos.App {
 
 func main() {
 	flag.Parse()
-	logger := log.NewLogger(
-		slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			AddSource: true,
-			Level:     slog.LevelInfo,
-		}),
-	).With(
-		slog.String("service.id", id),
-		slog.String("service.name", Name),
-		slog.String("service.version", Version),
-	)
-	log.SetDefault(logger)
 	c := config.New(
 		config.WithSource(
 			file.NewSource(flagconf),
@@ -86,6 +75,19 @@ func main() {
 	if err := c.Scan(&bc); err != nil {
 		panic(err)
 	}
+
+	appLogger, logCleanup, err := corelog.New(bc.Log)
+	if err != nil {
+		panic(err)
+	}
+	defer logCleanup()
+
+	logger := appLogger.Slog().With(
+		slog.String("service.id", id),
+		slog.String("service.name", Name),
+		slog.String("service.version", Version),
+	)
+	kratoslog.SetDefault(logger)
 
 	app, cleanup, err := wireApp(bc.Server, bc.Data, logger)
 	if err != nil {

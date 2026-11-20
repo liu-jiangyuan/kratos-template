@@ -1,17 +1,25 @@
 package server
 
 import (
-	"github.com/liu-jiangyuan/kratos-template/core/conf"
+	"log/slog"
 
+	"github.com/liu-jiangyuan/kratos-template/core/conf"
+	"github.com/liu-jiangyuan/kratos-template/core/middleware/requestid"
+
+	"github.com/go-kratos/kratos/contrib/otel/v3/tracing"
+	"github.com/go-kratos/kratos/v3/middleware/logging"
 	"github.com/go-kratos/kratos/v3/middleware/recovery"
 	"github.com/go-kratos/kratos/v3/transport/grpc"
 )
 
 // NewGRPCServer creates the shared gRPC server and registers all module routes.
-func NewGRPCServer(c *conf.Server, registrars []Registrar) *grpc.Server {
+func NewGRPCServer(c *conf.Server, logger *slog.Logger, registrars []Registrar) *grpc.Server {
 	var opts = []grpc.ServerOption{
 		grpc.Middleware(
 			recovery.Recovery(),
+			tracing.Server(),
+			requestid.Server(),
+			logging.Server(logger),
 		),
 	}
 	if c.GetGrpc().GetNetwork() != "" {

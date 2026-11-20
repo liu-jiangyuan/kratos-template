@@ -13,14 +13,30 @@
   - 仅依赖标准库或三方库，可独立复制到任意 Go 项目编译使用。
 - **归入 `core/<name>`**：
   - 依赖 `core/conf` 配置初始化；
-  - 或属于 HTTP/gRPC 中间件、客户端连接池（数据库、缓存、消息队列、注册中心等）；
+  - 或属于 HTTP/gRPC 中间件、日志系统、客户端连接池（数据库、缓存、消息队列、注册中心等）；
   - 需要通过 Wire 注入到 `core/server` 或各业务模块的 `biz` / `model` 中。
 
 > **红线**：`core` 与 `pkg` 均**严禁** import `internal/...`、`api/...`、`cmd/...`。
 
 ---
 
-## 2. 数据库事务 (`core/data.InTx`) 约束
+## 2. 链路追踪、`request_id` 与日志规范 (`core/log` & `core/middleware/requestid`)
+
+1. **链路追踪与 `request_id` 自动透传**：
+   - `core/server` 默认挂载官方 `tracing.Server()`、自定义 `requestid.Server()` 和官方 `logging.Server(logger)` 中间件。
+   - `requestid.Server()` 会从请求头读取 `X-Request-Id`；若客户端未携带，后端自动生成 UUIDv7，写回响应头 `X-Request-Id`，并通过 `kratos/v3/log.ContextWithAttrs` 注入 `request_id`。
+   - 业务代码中调用 `log.InfoContext(ctx, "...")`（或注入 `core/log.Logger` 调用 `.Info(ctx, "...")`）时，日志会自动携带 `request_id`、`trace_id`、`span_id`。
+2. **日志接口与 3 种输出实现 (`core/log`)**：
+   - 统一接口：`core/log.Logger`（兼容 `slog.Handler` 与 `io.Closer`）。
+   - 3 种内置实现（通过 `configs/config.yaml` 的 `log.driver` 切换）：
+     - `console` (`ConsoleLogger`)：输出到终端；
+     - `file` (`FileLogger`)：输出到本地文件；
+     - `database` (`DatabaseLogger`)：通过 HTTP 请求将日志发送到 Elasticsearch / ZincSearch 等日志数据库 API（配置 `log.database.endpoint`、`method`、`headers`、`timeout`）。
+   - 自定义日志格式（`log.format`）：支持 `"text"`、`"json"`，或任意自定义模板字符串（如 `"{time} [{level}] [req={request_id}] [trace={trace_id}] {caller} - {msg} {attrs}"`）。
+
+---
+
+## 3. 数据库事务 (`core/data.InTx`) 约束
 
 `core/data/data.go` 提供基于 `context.Context` 的事务传播：
 
@@ -29,7 +45,7 @@
 
 ---
 
-## 3. 基础设施扩展约定
+## 4. 基础设施扩展约定
 
 1. **新增配置项**：在 `core/conf/conf.proto` 中定义，执行 `make config` 生成 `conf.pb.go`。
 2. **新增全局中间件**：在 `core/middleware/<name>/` 下实现，并在 `core/server/http.go` 或 `core/server/grpc.go` 中挂载。
