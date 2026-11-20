@@ -9,7 +9,7 @@
 ## 使用模板创建新项目
 
 ```bash
-kratos new <your-project-name> -r https://github.com/liu-jiangyuan/kratos-template.git
+kratos new <your-project-name> -r https://github.com/liu-jiangyuan/kratos-template.git --branch dev
 ```
 
 `kratos new` 会自动：
