@@ -27,12 +27,12 @@
    - `requestid.Server()` 会从请求头读取 `X-Request-Id`；若客户端未携带，后端自动生成 UUIDv7，写回响应头 `X-Request-Id`，并通过 `kratos/v3/log.ContextWithAttrs` 注入 `request_id`。
    - 业务代码中调用 `log.InfoContext(ctx, "...")`（或注入 `core/log.Logger` 调用 `.Info(ctx, "...")`）时，日志会自动携带 `request_id`、`trace_id`、`span_id`。
 2. **日志接口与 3 种输出实现 (`core/log`)**：
-   - 统一接口：`core/log.Logger`（兼容 `slog.Handler` 与 `io.Closer`）。
-   - 3 种内置实现（通过 `configs/config.yaml` 的 `log.driver` 切换）：
-     - `console` (`ConsoleLogger`)：输出到终端；
-     - `file` (`FileLogger`)：输出到本地文件；
+   - 统一接口：`core/log.Logger`（兼容 `slog.Handler` 与 `io.Closer`），默认导出 `core/log.ProviderSet`。
+   - 3 种内置实现（通过 `configs/config.yaml` 的 `log.driver` 切换，默认 `console`）：
+     - `console` (`ConsoleLogger`)：输出到终端，默认按日志级别对整行字符进行 ANSI 颜色着色（`debug` 默认颜色、`info` 蓝色、`warn` 黄色、`error` 红色）；
+     - `file` (`FileLogger`)：输出到本地文件（无 ANSI 颜色转义字符）；
      - `database` (`DatabaseLogger`)：通过 HTTP 请求将日志发送到 Elasticsearch / ZincSearch 等日志数据库 API（配置 `log.database.endpoint`、`method`、`headers`、`timeout`）。
-   - 自定义日志格式（`log.format`）：支持 `"text"`、`"json"`，或任意自定义模板字符串（如 `"{time} [{level}] [req={request_id}] [trace={trace_id}] {caller} - {msg} {attrs}"`）。
+   - 自定义日志格式（`log.format`）：默认 `"json"`，同时支持 `"text"` 或任意自定义模板字符串（如 `"{time} [{level}] [req={request_id}] [trace={trace_id}] {caller} - {msg} {attrs}"`）。
 
 ---
 

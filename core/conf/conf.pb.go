@@ -192,9 +192,9 @@ type Log struct {
 	Driver string `protobuf:"bytes,1,opt,name=driver,proto3" json:"driver,omitempty"`
 	// Minimum log level: "debug", "info" (default), "warn", "error".
 	Level string `protobuf:"bytes,2,opt,name=level,proto3" json:"level,omitempty"`
-	// Log format: "text" (default), "json", or a custom template string.
+	// Log format: "json" (default), "text", or a custom template string.
 	Format string `protobuf:"bytes,3,opt,name=format,proto3" json:"format,omitempty"`
-	// Time layout for formatted timestamps (defaults to time.RFC3339).
+	// Time layout for formatted timestamps (defaults to "2006-01-02 15:04:05").
 	TimeFormat string `protobuf:"bytes,4,opt,name=time_format,json=timeFormat,proto3" json:"time_format,omitempty"`
 	// Whether to include source file:line in log records.
 	AddSource     bool          `protobuf:"varint,5,opt,name=add_source,json=addSource,proto3" json:"add_source,omitempty"`

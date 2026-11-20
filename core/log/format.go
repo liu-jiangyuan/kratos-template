@@ -25,21 +25,24 @@ func (f FormatterFunc) Format(r slog.Record, preAttrs []slog.Attr, groups []stri
 	return f(r, preAttrs, groups)
 }
 
+// DefaultTimeFormat is the default timestamp layout ("2006-01-02 15:04:05").
+const DefaultTimeFormat = "2006-01-02 15:04:05"
+
 // NewFormatter returns a Formatter based on formatSpec and timeFormat.
-//   - "json": outputs a single-line JSON object per record (suitable for console, file, or ES/ZincSearch HTTP APIs).
-//   - "text" or "": outputs standard key=value text format.
+//   - "json" or "": outputs a single-line JSON object per record (default; suitable for console, file, or ES/ZincSearch HTTP APIs).
+//   - "text": outputs standard key=value text format.
 //   - any other string: treated as a custom template supporting placeholders such as
 //     {time}, {level}, {msg}, {caller}, {request_id}, {trace_id}, {span_id}, {attrs},
 //     or any attribute key {<attr_key>}.
 func NewFormatter(formatSpec, timeFormat string) Formatter {
 	if strings.TrimSpace(timeFormat) == "" {
-		timeFormat = time.RFC3339
+		timeFormat = DefaultTimeFormat
 	}
 	switch strings.ToLower(strings.TrimSpace(formatSpec)) {
-	case "", "text":
-		return &textFormatter{timeFormat: timeFormat}
-	case "json":
+	case "", "json":
 		return &jsonFormatter{timeFormat: timeFormat}
+	case "text":
+		return &textFormatter{timeFormat: timeFormat}
 	default:
 		return &templateFormatter{
 			template:   formatSpec,
@@ -137,7 +140,6 @@ func (f *jsonFormatter) Format(r slog.Record, preAttrs []slog.Attr, groups []str
 	}
 	payload := make(map[string]any, 8+len(preAttrs)+r.NumAttrs())
 	payload["time"] = ts.Format(f.timeFormat)
-	payload["level"] = r.Level.String()
 	payload["msg"] = r.Message
 	if caller := callerString(r.PC); caller != "" {
 		payload["source"] = caller
@@ -146,6 +148,9 @@ func (f *jsonFormatter) Format(r slog.Record, preAttrs []slog.Attr, groups []str
 		payload[a.Key] = attrToAny(a.Value)
 	}
 	var buf bytes.Buffer
+	buf.WriteByte('[')
+	buf.WriteString(r.Level.String())
+	buf.WriteString("] ")
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(payload); err != nil {
@@ -243,7 +248,7 @@ func attrValueString(v slog.Value) string {
 	case slog.KindDuration:
 		return v.Duration().String()
 	case slog.KindTime:
-		return v.Time().Format(time.RFC3339Nano)
+		return v.Time().Format(DefaultTimeFormat)
 	default:
 		return fmt.Sprint(v.Any())
 	}
@@ -265,7 +270,7 @@ func attrToAny(v slog.Value) any {
 	case slog.KindDuration:
 		return v.Duration().String()
 	case slog.KindTime:
-		return v.Time()
+		return v.Time().Format(DefaultTimeFormat)
 	default:
 		if err, ok := v.Any().(error); ok {
 			return err.Error()

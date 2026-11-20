@@ -11,9 +11,13 @@ import (
 
 	"github.com/liu-jiangyuan/kratos-template/core/conf"
 
-	"github.com/go-kratos/kratos/contrib/otel/v3/tracing"
 	kratoslog "github.com/go-kratos/kratos/v3/log"
+	"github.com/google/wire"
+	"go.opentelemetry.io/otel/trace"
 )
+
+// ProviderSet is core log providers.
+var ProviderSet = wire.NewSet(New)
 
 const (
 	// DriverConsole outputs log records to the terminal (stdout).
@@ -44,14 +48,29 @@ type baseLogger struct {
 	level     slog.Level
 	formatter Formatter
 	addSource bool
+	colorize  bool
 	preAttrs  []slog.Attr
 	groups    []string
 	slogger   *slog.Logger
 }
 
+func traceAttrs(ctx context.Context) []slog.Attr {
+	var traceID, spanID string
+	if span := trace.SpanContextFromContext(ctx); span.HasTraceID() {
+		traceID = span.TraceID().String()
+	}
+	if span := trace.SpanContextFromContext(ctx); span.HasSpanID() {
+		spanID = span.SpanID().String()
+	}
+	return []slog.Attr{
+		slog.String("trace_id", traceID),
+		slog.String("span_id", spanID),
+	}
+}
+
 func newBaseLogger(w io.Writer, closer io.Closer, level slog.Level, formatter Formatter, addSource bool) *baseLogger {
 	if formatter == nil {
-		formatter = NewFormatter("text", "")
+		formatter = NewFormatter("json", "")
 	}
 	l := &baseLogger{
 		writer:    w,
@@ -62,7 +81,7 @@ func newBaseLogger(w io.Writer, closer io.Closer, level slog.Level, formatter Fo
 	}
 	l.slogger = kratoslog.NewLogger(
 		l,
-		kratoslog.WithExtractor(tracing.TraceAttrs),
+		kratoslog.WithExtractor(traceAttrs),
 	)
 	return l
 }
@@ -80,6 +99,9 @@ func (l *baseLogger) Handle(_ context.Context, r slog.Record) error {
 	if err != nil {
 		return err
 	}
+	if l.colorize {
+		data = ColorizeLine(rec.Level, data)
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	_, err = l.writer.Write(data)
@@ -96,6 +118,7 @@ func (l *baseLogger) WithAttrs(attrs []slog.Attr) slog.Handler {
 		level:     l.level,
 		formatter: l.formatter,
 		addSource: l.addSource,
+		colorize:  l.colorize,
 		preAttrs:  merged,
 		groups:    append([]string(nil), l.groups...),
 	}
@@ -116,6 +139,7 @@ func (l *baseLogger) WithGroup(name string) slog.Handler {
 		level:     l.level,
 		formatter: l.formatter,
 		addSource: l.addSource,
+		colorize:  l.colorize,
 		preAttrs:  append([]slog.Attr(nil), l.preAttrs...),
 		groups:    groups,
 	}
@@ -164,10 +188,10 @@ func ParseLevel(s string) slog.Level {
 	}
 }
 
-// New builds the configured Logger implementation ("console", "file", or "database").
+// New builds the configured Logger implementation ("console" by default in "json" mode, "file", or "database").
 func New(c *conf.Log) (Logger, func(), error) {
 	if c == nil {
-		logger := NewConsoleLogger(os.Stdout, slog.LevelInfo, NewFormatter("text", ""), true)
+		logger := NewConsoleLogger(os.Stdout, slog.LevelInfo, NewFormatter("json", ""), true)
 		return logger, func() { _ = logger.Close() }, nil
 	}
 	level := ParseLevel(c.GetLevel())
@@ -177,11 +201,7 @@ func New(c *conf.Log) (Logger, func(), error) {
 		driver = DriverConsole
 	}
 	if formatStr == "" {
-		if driver == DriverDatabase {
-			formatStr = "json"
-		} else {
-			formatStr = "text"
-		}
+		formatStr = "json"
 	}
 	formatter := NewFormatter(formatStr, c.GetTimeFormat())
 

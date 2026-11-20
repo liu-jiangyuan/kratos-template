@@ -39,8 +39,10 @@ make run
 │   └── config.yaml             # 本地运行配置（默认 PostgreSQL）
 ├── core/                       # 核心库：项目级基础设施（可依赖 pkg、ent，严禁依赖 internal、api）
 │   ├── conf/                   #   conf.proto 配置结构与生成代码
-│   ├── server/                 #   创建全局唯一的 HTTP / gRPC Server，定义模块路由注册接口 Registrar
-│   └── data/                   #   数据库连接（ent.Client 构建、自动迁移、关闭、事务封装 InTx）
+│   ├── data/                   #   数据库连接（ent.Client 构建、自动迁移、关闭、事务封装 InTx）
+│   ├── log/                    #   日志模块（默认终端 JSON 输出 + 级别颜色着色，支持 console / file / database）
+│   ├── middleware/             #   通用中间件（如 requestid）
+│   └── server/                 #   创建全局唯一的 HTTP / gRPC Server，定义模块路由注册接口 Registrar
 ├── docs/                       # 架构边界、模块开发与扩展规范文档（供开发者与 AI 扫描）
 │   ├── README.md
 │   ├── 01-architecture-and-boundaries.md

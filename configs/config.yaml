@@ -17,9 +17,9 @@ log:
   # Output driver: "console" (terminal), "file" (local file), or "database" (HTTP log DB API such as ES/ZincSearch)
   driver: ${LOG_DRIVER:console}
   level: ${LOG_LEVEL:info}
-  # Format: "text", "json", or custom template e.g. "{time} [{level}] [req={request_id}] [trace={trace_id}] {caller} - {msg} {attrs}"
-  format: ${LOG_FORMAT:text}
-  time_format: "2006-01-02T15:04:05.000Z07:00"
+  # Format: "json" (default), "text", or custom template e.g. "{time} [{level}] [req={request_id}] [trace={trace_id}] {caller} - {msg} {attrs}"
+  format: ${LOG_FORMAT:json}
+  time_format: "2006-01-02 15:04:05"
   add_source: true
   file:
     path: ./logs/app.log

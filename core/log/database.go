@@ -2,6 +2,7 @@ package log
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -40,8 +41,31 @@ type httpLogWriter struct {
 	client   *http.Client
 }
 
-func (w *httpLogWriter) Write(p []byte) (int, error) {
+func normalizeJSONPayload(p []byte) []byte {
 	payload := bytes.TrimSpace(p)
+	if len(payload) > 0 && payload[0] == '[' {
+		if idx := bytes.Index(payload, []byte("] {")); idx > 1 {
+			level := string(payload[1:idx])
+			rawJSON := payload[idx+2:]
+			var doc map[string]any
+			if err := json.Unmarshal(rawJSON, &doc); err == nil {
+				if _, exists := doc["level"]; !exists {
+					doc["level"] = level
+				}
+				var buf bytes.Buffer
+				enc := json.NewEncoder(&buf)
+				enc.SetEscapeHTML(false)
+				if err := enc.Encode(doc); err == nil {
+					return bytes.TrimSpace(buf.Bytes())
+				}
+			}
+		}
+	}
+	return payload
+}
+
+func (w *httpLogWriter) Write(p []byte) (int, error) {
+	payload := normalizeJSONPayload(p)
 	req, err := http.NewRequest(w.method, w.endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return 0, err

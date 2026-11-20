@@ -63,10 +63,10 @@ message Log {
   string driver = 1;
   // Minimum log level: "debug", "info" (default), "warn", "error".
   string level = 2;
-  // Log format: "text" (default), "json", or a custom template string
+  // Log format: "json" (default), "text", or a custom template string
   // such as "{time} [{level}] [req={request_id}] [trace={trace_id}] {caller} - {msg} {attrs}".
   string format = 3;
-  // Time layout for formatted timestamps (defaults to time.RFC3339).
+  // Time layout for formatted timestamps (defaults to "2006-01-02 15:04:05").
   string time_format = 4;
   // Whether to include source file:line in log records.
   bool add_source = 5;

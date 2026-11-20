@@ -7,12 +7,14 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/liu-jiangyuan/kratos-template/core/conf"
 
 	kratoslog "github.com/go-kratos/kratos/v3/log"
 )
@@ -32,6 +34,123 @@ func TestConsoleLoggerAndCustomFormat(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "[INFO] [req=req-001] user login | user=alice attempt=1") {
 		t.Fatalf("unexpected custom formatted log output: %q", out)
+	}
+	if !strings.HasPrefix(out, ansiBlue) || !strings.HasSuffix(out, ansiReset+"\n") {
+		t.Fatalf("expected blue ANSI color wrapper on info console log, got %q", out)
+	}
+}
+
+func TestConsoleLoggerDefaultJSONAndLevelColors(t *testing.T) {
+	var buf bytes.Buffer
+	// Write to both &buf (for assertions) and os.Stdout (so running `go test -v` displays colored logs in terminal).
+	outWriter := io.MultiWriter(&buf, os.Stdout)
+	// nil formatter and empty formatSpec both default to JSON mode.
+	logger := NewConsoleLogger(outWriter, slog.LevelDebug, NewFormatter("", ""), true)
+	defer logger.Close()
+
+	ctx := context.Background()
+
+	// 1. DEBUG: default terminal color (no ANSI escape prefix/suffix)
+	buf.Reset()
+	logger.Debug(ctx, "debug message", "k", "v")
+	debugOut := buf.String()
+	if strings.Contains(debugOut, "\x1b[") {
+		t.Fatalf("expected debug log to use default terminal color without ANSI codes, got %q", debugOut)
+	}
+	if !strings.HasPrefix(debugOut, "[DEBUG] ") {
+		t.Fatalf("expected debug log to start with '[DEBUG] ', got %q", debugOut)
+	}
+	debugJSON := strings.TrimPrefix(debugOut, "[DEBUG] ")
+	var debugDoc map[string]any
+	if err := json.Unmarshal([]byte(debugJSON), &debugDoc); err != nil {
+		t.Fatalf("expected debug log payload to be valid JSON, err = %v, raw = %q", err, debugJSON)
+	}
+	if debugDoc["msg"] != "debug message" || debugDoc["k"] != "v" {
+		t.Fatalf("unexpected debug JSON content: %+v", debugDoc)
+	}
+	if _, hasLevel := debugDoc["level"]; hasLevel {
+		t.Fatalf("expected level to be in prefix [DEBUG] rather than inside JSON object: %+v", debugDoc)
+	}
+	if ts, ok := debugDoc["time"].(string); !ok {
+		t.Fatalf("expected time string in JSON log, got %v", debugDoc["time"])
+	} else if _, err := time.Parse(DefaultTimeFormat, ts); err != nil {
+		t.Fatalf("expected time %q to match layout %q: %v", ts, DefaultTimeFormat, err)
+	}
+
+	// 2. INFO: blue (\x1b[34m[INFO] {...}\x1b[0m\n)
+	buf.Reset()
+	logger.Info(ctx, "info message")
+	infoOut := buf.String()
+	if !strings.HasPrefix(infoOut, ansiBlue+"[INFO] ") || !strings.HasSuffix(infoOut, ansiReset+"\n") {
+		t.Fatalf("expected info log to be wrapped in blue with [INFO] prefix, got %q", infoOut)
+	}
+	infoJSON := strings.TrimSuffix(strings.TrimPrefix(infoOut, ansiBlue+"[INFO] "), ansiReset+"\n")
+	var infoDoc map[string]any
+	if err := json.Unmarshal([]byte(infoJSON), &infoDoc); err != nil {
+		t.Fatalf("expected info log inner payload to be valid JSON, err = %v, raw = %q", err, infoJSON)
+	}
+	if infoDoc["msg"] != "info message" {
+		t.Fatalf("unexpected info JSON content: %+v", infoDoc)
+	}
+
+	// 3. WARN: yellow (\x1b[33m[WARN] {...}\x1b[0m\n)
+	buf.Reset()
+	logger.Warn(ctx, "warn message")
+	warnOut := buf.String()
+	if !strings.HasPrefix(warnOut, ansiYellow+"[WARN] ") || !strings.HasSuffix(warnOut, ansiReset+"\n") {
+		t.Fatalf("expected warn log to be wrapped in yellow with [WARN] prefix, got %q", warnOut)
+	}
+	warnJSON := strings.TrimSuffix(strings.TrimPrefix(warnOut, ansiYellow+"[WARN] "), ansiReset+"\n")
+	var warnDoc map[string]any
+	if err := json.Unmarshal([]byte(warnJSON), &warnDoc); err != nil {
+		t.Fatalf("expected warn log inner payload to be valid JSON, err = %v, raw = %q", err, warnJSON)
+	}
+	if warnDoc["msg"] != "warn message" {
+		t.Fatalf("unexpected warn JSON content: %+v", warnDoc)
+	}
+
+	// 4. ERROR: red (\x1b[31m[ERROR] {...}\x1b[0m\n)
+	buf.Reset()
+	logger.Error(ctx, "error message")
+	errOut := buf.String()
+	if !strings.HasPrefix(errOut, ansiRed+"[ERROR] ") || !strings.HasSuffix(errOut, ansiReset+"\n") {
+		t.Fatalf("expected error log to be wrapped in red with [ERROR] prefix, got %q", errOut)
+	}
+	errJSON := strings.TrimSuffix(strings.TrimPrefix(errOut, ansiRed+"[ERROR] "), ansiReset+"\n")
+	var errDoc map[string]any
+	if err := json.Unmarshal([]byte(errJSON), &errDoc); err != nil {
+		t.Fatalf("expected error log inner payload to be valid JSON, err = %v, raw = %q", err, errJSON)
+	}
+	if errDoc["msg"] != "error message" {
+		t.Fatalf("unexpected error JSON content: %+v", errDoc)
+	}
+
+	// 5. Derived slog.Logger via .With(...) preserves terminal colorization and JSON mode
+	buf.Reset()
+	child := logger.Slog().With(slog.String("service.name", "demo"))
+	child.ErrorContext(ctx, "child error")
+	childOut := buf.String()
+	if !strings.HasPrefix(childOut, ansiRed) || !strings.HasSuffix(childOut, ansiReset+"\n") {
+		t.Fatalf("expected derived slog.Logger to preserve red color, got %q", childOut)
+	}
+}
+
+func TestNewDefaultsToConsoleJSON(t *testing.T) {
+	logger, cleanup, err := New(&conf.Log{})
+	if err != nil {
+		t.Fatalf("New(&conf.Log{}) error = %v", err)
+	}
+	defer cleanup()
+
+	cl, ok := logger.(*ConsoleLogger)
+	if !ok {
+		t.Fatalf("expected *ConsoleLogger by default, got %T", logger)
+	}
+	if _, isJSON := cl.formatter.(*jsonFormatter); !isJSON {
+		t.Fatalf("expected *jsonFormatter by default, got %T", cl.formatter)
+	}
+	if !cl.colorize {
+		t.Fatal("expected colorize=true on default ConsoleLogger")
 	}
 }
 
@@ -59,37 +178,52 @@ func TestFileLogger(t *testing.T) {
 	}
 }
 
+type roundTripFunc func(req *http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 func TestDatabaseLoggerHTTP(t *testing.T) {
 	var (
 		mu       sync.Mutex
 		received []map[string]any
 		authHdr  string
 	)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		var doc map[string]any
-		if err := json.Unmarshal(body, &doc); err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		mu.Lock()
-		authHdr = r.Header.Get("Authorization")
-		received = append(received, doc)
-		mu.Unlock()
-		w.WriteHeader(http.StatusCreated)
-	}))
-	defer srv.Close()
+	client := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				return &http.Response{
+					StatusCode: http.StatusBadRequest,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}
+			var doc map[string]any
+			if err := json.Unmarshal(body, &doc); err != nil {
+				return &http.Response{
+					StatusCode: http.StatusBadRequest,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}
+			mu.Lock()
+			authHdr = r.Header.Get("Authorization")
+			received = append(received, doc)
+			mu.Unlock()
+			return &http.Response{
+				StatusCode: http.StatusCreated,
+				Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+			}, nil
+		}),
+	}
 
 	logger, err := NewDatabaseLogger(DatabaseConfig{
-		Endpoint: srv.URL + "/api/logs/_doc",
+		Endpoint: "http://127.0.0.1:4080/api/logs/_doc",
 		Method:   http.MethodPost,
 		Headers: map[string]string{
 			"Authorization": "Basic dGVzdDp0ZXN0",
 		},
+		Client: client,
 	}, slog.LevelInfo, NewFormatter("json", ""), false)
 	if err != nil {
 		t.Fatalf("NewDatabaseLogger() error = %v", err)
