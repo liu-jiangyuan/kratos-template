@@ -18,6 +18,8 @@ import (
 // NewHTTPServer creates the shared HTTP server and registers all module routes.
 func NewHTTPServer(c *conf.Server, logger *slog.Logger, registrars []Registrar) *http.Server {
 	var opts = []http.ServerOption{
+		http.ResponseEncoder(ResponseEncoder),
+		http.ErrorEncoder(ErrorEncoder),
 		http.Middleware(
 			recovery.Recovery(),
 			tracing.Server(),
