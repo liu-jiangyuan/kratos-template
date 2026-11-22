@@ -10,8 +10,8 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/liu-jiangyuan/kratos-template/ent/todo"
 	"github.com/google/uuid"
+	"github.com/liu-jiangyuan/kratos-template/ent/todo"
 )
 
 // TodoCreate is the builder for creating a Todo entity.

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
-	"github.com/liu-jiangyuan/kratos-template/ent/predicate"
 	"github.com/google/uuid"
+	"github.com/liu-jiangyuan/kratos-template/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.
@@ -82,8 +82,7 @@ func Completed(v bool) predicate.Todo {
 
 // Status applies equality check predicate on the "status" field. It's identical to StatusEQ.
 func Status(v int32) predicate.Todo {
-	vc := int32(v)
-	return predicate.Todo(sql.FieldEQ(FieldStatus, vc))
+	return predicate.Todo(sql.FieldEQ(FieldStatus, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
@@ -308,56 +307,42 @@ func CompletedNEQ(v bool) predicate.Todo {
 
 // StatusEQ applies the EQ predicate on the "status" field.
 func StatusEQ(v int32) predicate.Todo {
-	vc := int32(v)
-	return predicate.Todo(sql.FieldEQ(FieldStatus, vc))
+	return predicate.Todo(sql.FieldEQ(FieldStatus, v))
 }
 
 // StatusNEQ applies the NEQ predicate on the "status" field.
 func StatusNEQ(v int32) predicate.Todo {
-	vc := int32(v)
-	return predicate.Todo(sql.FieldNEQ(FieldStatus, vc))
+	return predicate.Todo(sql.FieldNEQ(FieldStatus, v))
 }
 
 // StatusIn applies the In predicate on the "status" field.
 func StatusIn(vs ...int32) predicate.Todo {
-	v := make([]any, len(vs))
-	for i := range v {
-		v[i] = int32(vs[i])
-	}
-	return predicate.Todo(sql.FieldIn(FieldStatus, v...))
+	return predicate.Todo(sql.FieldIn(FieldStatus, vs...))
 }
 
 // StatusNotIn applies the NotIn predicate on the "status" field.
 func StatusNotIn(vs ...int32) predicate.Todo {
-	v := make([]any, len(vs))
-	for i := range v {
-		v[i] = int32(vs[i])
-	}
-	return predicate.Todo(sql.FieldNotIn(FieldStatus, v...))
+	return predicate.Todo(sql.FieldNotIn(FieldStatus, vs...))
 }
 
 // StatusGT applies the GT predicate on the "status" field.
 func StatusGT(v int32) predicate.Todo {
-	vc := int32(v)
-	return predicate.Todo(sql.FieldGT(FieldStatus, vc))
+	return predicate.Todo(sql.FieldGT(FieldStatus, v))
 }
 
 // StatusGTE applies the GTE predicate on the "status" field.
 func StatusGTE(v int32) predicate.Todo {
-	vc := int32(v)
-	return predicate.Todo(sql.FieldGTE(FieldStatus, vc))
+	return predicate.Todo(sql.FieldGTE(FieldStatus, v))
 }
 
 // StatusLT applies the LT predicate on the "status" field.
 func StatusLT(v int32) predicate.Todo {
-	vc := int32(v)
-	return predicate.Todo(sql.FieldLT(FieldStatus, vc))
+	return predicate.Todo(sql.FieldLT(FieldStatus, v))
 }
 
 // StatusLTE applies the LTE predicate on the "status" field.
 func StatusLTE(v int32) predicate.Todo {
-	vc := int32(v)
-	return predicate.Todo(sql.FieldLTE(FieldStatus, vc))
+	return predicate.Todo(sql.FieldLTE(FieldStatus, v))
 }
 
 // And groups predicates with the AND operator between them.

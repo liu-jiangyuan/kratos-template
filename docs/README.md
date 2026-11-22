@@ -1,31 +1,40 @@
 # 架构与开发规范索引
 
-本目录定义了项目的硬性架构边界、模块开发规范与基础设施扩展约束。在生成、修改或新增模块代码时**必须**遵守本目录下的规范。
+本目录只保留模板的核心约束：**目录职责、依赖边界、模块分层、接口契约**。这些规则由 `test/arch` 与 `core/server` 共同保证，下游项目可以在此基础上按需扩展，但不要削弱边界。
 
-## 规范文档列表
+Demo 默认是 **HTTP 单体 + 内存 Repo**，`make run` 不需要数据库；Ent/Postgres 代码作为可选扩展保留，gRPC 需要时再扩展。
 
-- [`01-architecture-and-boundaries.md`](./01-architecture-and-boundaries.md)：目录职责与硬性依赖边界规则（由 `test/arch` 强制校验）。
-- [`02-module-development-guide.md`](./02-module-development-guide.md)：新增业务模块的标准结构与各层约束。
-- [`03-core-and-extension-guide.md`](./03-core-and-extension-guide.md)：`core` 与 `pkg` 的准入边界与扩展规范。
+## 文档列表
 
-## 铁律速览（违反会导致 `make check` / `go test ./test/arch/...` 失败）
+- [`01-architecture-and-boundaries.md`](./01-architecture-and-boundaries.md)：目录职责与硬性依赖边界。
+- [`02-module-development-guide.md`](./02-module-development-guide.md)：新增业务模块的标准结构。
+- [`03-core-and-extension-guide.md`](./03-core-and-extension-guide.md)：`core` / `pkg` 准入、日志、事务与扩展点。
 
-1. **`internal/` 只放业务模块目录**：每个业务模块是 `internal/<module>/` 下的独立目录，内部固定包含 `biz`、`model`、`service`、`server` 四个子包及顶层 `<module>.go`（导出 `ProviderSet`）。严禁在 `internal/` 下直接散落 `.go` 文件或非模块公共目录。
-2. **模块内单向依赖**：`server` ──► `service` ──► `biz` ◄── `model` ──► `ent`
-   - `biz` 只定义 DO（领域对象）、Repo 接口、Usecase，**严禁** import `ent`、`model`、`service`、`server`。
-   - `model` 实现 `biz` 的 Repo 接口并调用 `ent` / `core/data`，**严禁** import `api`、`service`、`server`。
-   - `service` 实现 `api` 的 gRPC/HTTP 接口并转换 DTO ↔ DO，**严禁** import `ent`、`model`、`server`。
-   - `server` 实现 `core/server.Registrar` 注册本模块路由，**严禁** import `ent`、`model`、`biz`。
-3. **严禁跨业务模块直接 import**：`internal/<a>/...` **严禁** import `internal/<b>/...`。
+## 铁律速览
+
+1. **`internal/` 只放业务模块目录**：每个模块固定包含 `biz`、`model`、`service`、`server` 四个子包和顶层 `<module>.go`（导出 `wire.ProviderSet`）。禁止在 `internal/` 下散落 `.go` 文件或公共目录。
+2. **模块内单向依赖**：`server ──► service ──► biz ◄── model ──► (memory / ent)`
+   - `biz` 只定义 DO、Repo 接口、Usecase、领域错误；禁止依赖 `ent`、本模块 `model`/`service`/`server`。
+   - `model` 实现 Repo 接口（Demo 默认 memory，可选 ent）；禁止依赖 `api`、本模块 `service`/`server`。
+   - `service` 实现 `api` 接口并转换 DTO ↔ DO；禁止依赖 `ent`、本模块 `model`/`server`。
+   - `server` 只实现 `core/server.Registrar`；禁止依赖 `ent`、本模块 `model`/`biz`。
+3. **禁止跨业务模块直接 import**：`internal/<a>/...` 不得 import `internal/<b>/...`。模块间协作通过事件、契约包或 API client 显式完成。
 4. **基础库单向依赖**：
-   - `pkg/...`：纯工具库，**严禁** import `core`、`ent`、`internal`、`api`、`cmd`。
-   - `ent/...`：数据库 Schema 与生成代码，**严禁** import `core`、`internal`、`api`、`cmd`。
-   - `core/...`：项目级基础设施，可依赖 `pkg` 和 `ent`，**严禁** import `internal`、`api`、`cmd`。
+   - `pkg/...`：纯工具库，不得 import `core`、`ent`、`internal`、`api`、`cmd`。
+   - `ent/...`：不得 import `core`、`internal`、`api`、`cmd`。
+   - `core/...`：可依赖 `pkg`、`ent`，不得 import `internal`、`api`、`cmd`。
 
-## 每次修改后的必跑验证
+## HTTP 响应契约
+
+统一响应与状态码映射定义在 [`README.md`](../README.md) 的「HTTP 响应契约」一节。简要规则：
+
+- 进入业务处理后的成功/业务失败：**HTTP 200**，`code=1/0`。
+- 协议、认证、系统错误：使用真实 HTTP 状态码，`code=0`。
+
+## 修改后的必跑验证
 
 ```bash
-make check   # 运行 go vet ./... 与 go test -v ./test/arch/...
-make test    # 运行全量单元测试与架构边界测试
-make run     # 本地启动服务
+make check   # gofmt + go vet + test/arch
+make test    # 单元测试 + 架构测试 + HTTP 集成测试
+make run     # 本地启动（无需数据库）
 ```

@@ -9,8 +9,8 @@ import (
 	"log"
 	"reflect"
 
-	"github.com/liu-jiangyuan/kratos-template/ent/migrate"
 	"github.com/google/uuid"
+	"github.com/liu-jiangyuan/kratos-template/ent/migrate"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"

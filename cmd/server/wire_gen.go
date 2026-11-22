@@ -7,37 +7,35 @@
 package main
 
 import (
-	"log/slog"
-
-	"github.com/liu-jiangyuan/kratos-template/core/conf"
-	"github.com/liu-jiangyuan/kratos-template/core/data"
-	coreserver "github.com/liu-jiangyuan/kratos-template/core/server"
-	todobiz "github.com/liu-jiangyuan/kratos-template/internal/todo/biz"
-	todomodel "github.com/liu-jiangyuan/kratos-template/internal/todo/model"
-	todoserver "github.com/liu-jiangyuan/kratos-template/internal/todo/server"
-	todoservice "github.com/liu-jiangyuan/kratos-template/internal/todo/service"
-
 	"github.com/go-kratos/kratos/v3"
+	"github.com/liu-jiangyuan/kratos-template/core/conf"
+	server2 "github.com/liu-jiangyuan/kratos-template/core/server"
+	"github.com/liu-jiangyuan/kratos-template/internal/todo/biz"
+	"github.com/liu-jiangyuan/kratos-template/internal/todo/model"
+	"github.com/liu-jiangyuan/kratos-template/internal/todo/server"
+	"github.com/liu-jiangyuan/kratos-template/internal/todo/service"
+	"log/slog"
+)
+
+import (
 	_ "go.uber.org/automaxprocs"
 )
 
 // Injectors from wire.go:
 
 // wireApp init kratos application.
-func wireApp(confServer *conf.Server, confData *conf.Data, logger *slog.Logger) (*kratos.App, func(), error) {
-	dataData, cleanup, err := data.NewData(confData)
-	if err != nil {
-		return nil, nil, err
-	}
-	todoRepo := todomodel.NewTodoRepo(dataData)
-	todoUsecase := todobiz.NewTodoUsecase(todoRepo)
-	todoService := todoservice.NewTodoService(todoUsecase)
-	registrar := todoserver.NewRegistrar(todoService)
+//
+// The *conf.Data input is unused in the demo. It is kept so enabling the
+// database only requires adding data.ProviderSet below and switching the todo
+// repository provider to model.NewTodoRepo.
+func wireApp(confServer *conf.Server, data *conf.Data, logger *slog.Logger) (*kratos.App, func(), error) {
+	todoRepo := model.NewMemoryTodoRepo()
+	todoUsecase := biz.NewTodoUsecase(todoRepo)
+	todoService := service.NewTodoService(todoUsecase)
+	registrar := server.NewRegistrar(todoService)
 	v := newRegistrars(registrar)
-	grpcServer := coreserver.NewGRPCServer(confServer, logger, v)
-	httpServer := coreserver.NewHTTPServer(confServer, logger, v)
-	app := newApp(logger, grpcServer, httpServer)
+	httpServer := server2.NewHTTPServer(confServer, logger, v)
+	app := newApp(logger, httpServer)
 	return app, func() {
-		cleanup()
 	}, nil
 }

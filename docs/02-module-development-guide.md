@@ -1,73 +1,95 @@
 # 02. 业务模块开发规范
 
-新增或修改业务模块（以 `<module>` 为例，参考 `internal/todo`）必须遵循以下结构与步骤。
+新增或修改业务模块（以 `<module>` 为例，参考 `internal/todo`）按以下步骤进行。
 
 ---
 
-## 1. API 契约约束 (`api/<module>/v1/`)
+## 1. API 契约 (`api/<module>/v1/`)
 
 - 每个模块在 `api/<module>/v1/` 下定义 `<module>.proto` 与 `error_reason.proto`。
-- `go_package` 统一使用相对路径：`option go_package = "api/<module>/v1;v1";`。
-- 修改后执行 `make api` 生成代码，严禁手改 `*.pb.go`。
+- 修改后执行 `make api`，禁止手改 `*.pb.go`。
+- `make api` 的 `google/api` 依赖直接来自 Kratos 官方 module 的 `third_party`，仓库不维护本地 `third_party`。
+- 需要 OpenAPI 时执行 `make openapi`；生成的 200 响应会包装为 `code/message/data` envelope，并写入 `servers`。
+- HTTP 路由避免使用会被 `/{id}` 捕获的固定段；自定义方法建议使用 `:action` 形式（如 `/v1/<resource>:action`）。
 
 ---
 
-## 2. 数据库 Schema 约束 (`ent/schema/`)
+## 2. 数据库 Schema (`ent/schema/`，可选)
 
-- 在 `ent/schema/<module>.go` 中定义表结构，复用 `IDMixin{}`（UUIDv7 主键）与 `TimeMixin{}`（`created_at` / `updated_at`）。
-- **禁止反向依赖**：`ent/schema` **严禁** import `internal/...`。状态枚举等字段在 schema 中使用 `field.Int32` 等基础类型，在 `model` 层再转为 `biz` 的领域类型。
-- 修改后执行 `make ent` 生成代码，严禁手改 `ent/` 下除 `schema/` 和 `generate.go` 以外的生成文件。
+Demo 默认使用内存 Repo，不涉及 Ent。需要数据库时：
+
+- 在 `ent/schema/<module>.go` 中定义表结构，复用 `IDMixin{}`（UUIDv7）与 `TimeMixin{}`。
+- **禁止反向依赖**：`ent/schema` 不得 import `internal/...`。状态枚举等字段使用 `field.Int32` 等基础类型，在 `model` 层转为 `biz` 类型。
+- 修改后执行 `make ent`；除 `schema/` 与 `generate.go` 外不要手改生成文件。
 
 ---
 
-## 3. 模块内部四层约束 (`internal/<module>/`)
-
-每个模块固定由以下 4 个子包和 1 个根包组成，**严禁**在模块下创建其他子目录：
+## 3. 模块四层结构
 
 ```text
 internal/<module>/
 ├── <module>.go         # 唯一出口：导出 wire.ProviderSet
-├── biz/                # 领域对象 (DO)、Repo 接口、领域错误、Usecase
-├── model/              # Repo 实现（调用 core/data 与 ent，DO <-> PO 转换）
-├── service/            # 实现 api 接口（参数校验，DTO <-> DO 转换）
-└── server/             # 实现 core/server.Registrar（注册 HTTP/gRPC 路由）
+├── biz/                # DO、Repo 接口、领域错误、Usecase
+├── model/              # Repo 实现（Demo 默认 memory，可选 ent + core/data）
+├── service/            # 实现 api 接口（DTO <-> DO）
+└── server/             # 实现 core/server.Registrar（HTTP）
 ```
 
-### 各层必须遵守的代码契约
+### 各层契约
 
 1. **`biz`**
-   - 领域错误使用 `api/<module>/v1` 的 `ErrorReason` 定义（如 `errors.NotFound(v1.ErrorReason_XXX.String(), "...")`）。
-   - Repo 接口在此声明，入参与返回值只能是 DO 或基本类型。
-2. **`model`**
-   - 构造函数签名必须返回 `biz` 的 Repo 接口：`func New<Resource>Repo(d *data.Data) biz.<Resource>Repo`。
-   - 所有数据库读写必须通过 `r.data.DB(ctx)` 获取 `*ent.Client`（确保 `core/data.InTx` 事务上下文生效）。
-   - 必须将 `ent.IsNotFound(err)` 等底层存储错误转换为 `biz` 领域错误，严禁向上层暴露 `ent` 错误。
-3. **`service`**
-   - 内嵌 `v1.Unimplemented<Resource>ServiceServer`，仅依赖 `*biz.<Resource>Usecase`。
-   - 完成 DTO ↔ DO 转换，不写业务逻辑，不直接访问存储。
-4. **`server`**
-   - 实现 `core/server.Registrar` 接口（`RegisterHTTP` / `RegisterGRPC`）。
-   - 只将本模块的 `service` 注册到全局 Server，严禁在此新建端口或 Server 实例。
-5. **`<module>.go`**
-   - 仅汇总导出本模块的 `ProviderSet`：
+   - 领域错误使用 `api/<module>/v1` 的 `ErrorReason`，例如：
      ```go
-     var ProviderSet = wire.NewSet(
-         model.New<Resource>Repo,
-         biz.New<Resource>Usecase,
-         service.New<Resource>Service,
-         server.NewRegistrar,
-     )
+     ErrNotFound = errors.NotFound(v1.ErrorReason_XXX_NOT_FOUND.String(), "not found")
      ```
+   - 基础设施错误统一返回 `ErrInternal`（参考 `biz.ErrTodoInternal`），不要把 ent/SQL 错误暴露给上层。
+   - Repo 接口的入参和返回值只使用 DO 或基础类型。
+
+2. **`model`**
+   - Demo 默认使用内存 Repo：`func NewMemory<Resource>Repo() biz.<Resource>Repo`，不需要数据库。
+   - 启用 Ent 时，构造函数返回 `biz` 的 Repo 接口：`func New<Resource>Repo(d *data.Data) biz.<Resource>Repo`；所有数据库读写通过 `r.data.DB(ctx)`。
+   - 非 `ent.IsNotFound` 的存储错误必须转换为 `biz.ErrInternal`，原始错误只写日志。
+
+3. **`service`**
+   - 只依赖 `*biz.<Resource>Usecase`，负责 DTO ↔ DO 转换、参数解析、字段校验。
+   - 参数解析错误包装为业务 `InvalidArgument`，不要直接把库错误返回给传输层。
+   - 业务错误（校验、逻辑、NotFound、Conflict）会映射为 HTTP 200 + `code=0`；协议/系统错误保留真实状态码。
+
+4. **`server`**
+   - 实现 `core/server.Registrar` 的 `RegisterHTTP`。
+   - 只注册本模块 service，不新建端口或 Server 实例。
+
+5. **`<module>.go`**
+
+   Demo 默认使用内存 Repo：
+
+   ```go
+   var ProviderSet = wire.NewSet(
+       model.NewMemory<Resource>Repo,
+       biz.New<Resource>Usecase,
+       service.New<Resource>Service,
+       server.NewRegistrar,
+   )
+   ```
+
+   接入 Ent/Postgres 时：
+
+   1. 把 `model.NewMemory<Resource>Repo` 换成 `model.New<Resource>Repo`；
+   2. 在 `cmd/<app>/wire.go` 导入并加入 `core/data.ProviderSet`；
+   3. 在 `configs/config.yaml` 打开 `data` 配置；
+   4. 执行 `make ent`。
 
 ---
 
-## 4. 全局组装与校验 (`cmd/<app>/`)
+## 4. 全局组装与验证
 
-1. 在 `cmd/<app>/main.go` 的 `newRegistrars` 参数与返回切片中加入新模块的 `*<module>server.Registrar`。
+1. 在 `cmd/<app>/main.go` 的 `newRegistrars` 中加入 `<module>server.NewRegistrar` 的产物。
 2. 在 `cmd/<app>/wire.go` 的 `wireApp` 中加入 `<module>.ProviderSet`。
-3. 执行生成与架构校验：
+3. 执行：
+
    ```bash
    make wire
+   make api
    make check
    make test
    ```

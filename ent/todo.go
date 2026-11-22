@@ -9,8 +9,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/liu-jiangyuan/kratos-template/ent/todo"
 	"github.com/google/uuid"
+	"github.com/liu-jiangyuan/kratos-template/ent/todo"
 )
 
 // Todo is the model entity for the Todo schema.

@@ -31,8 +31,11 @@ Thumbs.db
 *.key
 *.log
 bin/
+logs/
+.tools/
 
 # Develop tools
 .vscode/
 .idea/
 *.swp
+openapi.yaml

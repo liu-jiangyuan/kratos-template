@@ -36,7 +36,7 @@ func readModulePath(t *testing.T, root string) string {
 //  2. ent/...      -> cannot import core, internal, api
 //  3. core/...     -> cannot import internal, api
 //  4. internal/    -> only contains business module subdirectories (no loose Go files),
-//                     and each module only uses the standard sub-packages (server, service, biz, model)
+//     and each module only uses the standard sub-packages (server, service, biz, model)
 //  5. Cross-module -> internal/<a>/... cannot import internal/<b>/...
 //  6. Intra-module ->
 //     - internal/<m>/biz     cannot import ent or internal/<m>/{model,service,server}

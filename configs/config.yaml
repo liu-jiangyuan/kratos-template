@@ -1,18 +1,8 @@
+# Demo runs as a single HTTP service with an in-memory repository.
 server:
   http:
     addr: 0.0.0.0:8000
-    timeout: 1s
-  grpc:
-    addr: 0.0.0.0:9000
-    timeout: 1s
-data:
-  database:
-    driver: postgres
-    source: ${DATABASE_SOURCE:postgres://postgres:postgres@127.0.0.1:5432/kratos?sslmode=disable}
-    # Development conveniences. Keep both false in production and apply schema
-    # changes as a separate reviewed step.
-    debug: true
-    auto_migrate: true
+    timeout: 5s
 log:
   # Output driver: "console" (terminal), "file" (local file), or "database" (HTTP log DB API such as ES/ZincSearch)
   driver: ${LOG_DRIVER:console}
@@ -27,3 +17,12 @@ log:
     endpoint: ${LOG_DB_ENDPOINT:http://127.0.0.1:4080/api/app_logs/_doc}
     method: POST
     timeout: 5s
+
+# Optional database wiring. Uncomment together with core/data.ProviderSet and
+# switch internal/todo/todo.go to model.NewTodoRepo when developing a concrete project.
+# data:
+#   database:
+#     driver: postgres
+#     source: ${DATABASE_SOURCE:postgres://postgres:postgres@127.0.0.1:5432/kratos?sslmode=disable}
+#     debug: true
+#     auto_migrate: true

@@ -5,11 +5,10 @@ import (
 	coreserver "github.com/liu-jiangyuan/kratos-template/core/server"
 	"github.com/liu-jiangyuan/kratos-template/internal/todo/service"
 
-	"github.com/go-kratos/kratos/v3/transport/grpc"
 	"github.com/go-kratos/kratos/v3/transport/http"
 )
 
-// Registrar registers the todo module's HTTP and gRPC routes onto the shared servers.
+// Registrar registers the todo module's HTTP routes onto the shared server.
 type Registrar struct {
 	svc *service.TodoService
 }
@@ -24,9 +23,4 @@ func NewRegistrar(svc *service.TodoService) *Registrar {
 // RegisterHTTP registers the todo module's HTTP routes.
 func (r *Registrar) RegisterHTTP(srv *http.Server) {
 	v1.RegisterTodoServiceHTTPServer(srv, r.svc)
-}
-
-// RegisterGRPC registers the todo module's gRPC service.
-func (r *Registrar) RegisterGRPC(srv *grpc.Server) {
-	v1.RegisterTodoServiceServer(srv, r.svc)
 }

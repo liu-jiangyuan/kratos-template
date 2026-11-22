@@ -15,7 +15,6 @@ import (
 	"github.com/go-kratos/kratos/v3/config/env"
 	"github.com/go-kratos/kratos/v3/config/file"
 	kratoslog "github.com/go-kratos/kratos/v3/log"
-	"github.com/go-kratos/kratos/v3/transport/grpc"
 	"github.com/go-kratos/kratos/v3/transport/http"
 
 	_ "go.uber.org/automaxprocs"
@@ -43,17 +42,14 @@ func newRegistrars(todoReg *todoserver.Registrar) []coreserver.Registrar {
 	}
 }
 
-func newApp(logger *slog.Logger, gs *grpc.Server, hs *http.Server) *kratos.App {
+func newApp(logger *slog.Logger, hs *http.Server) *kratos.App {
 	return kratos.New(
 		kratos.ID(id),
 		kratos.Name(Name),
 		kratos.Version(Version),
 		kratos.Metadata(map[string]string{}),
 		kratos.Logger(logger),
-		kratos.Server(
-			gs,
-			hs,
-		),
+		kratos.Server(hs),
 	)
 }
 

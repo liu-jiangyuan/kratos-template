@@ -11,9 +11,9 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/google/uuid"
 	"github.com/liu-jiangyuan/kratos-template/ent/predicate"
 	"github.com/liu-jiangyuan/kratos-template/ent/todo"
-	"github.com/google/uuid"
 )
 
 const (
@@ -332,8 +332,8 @@ func (m *TodoMutation) ResetCompleted() {
 }
 
 // SetStatus sets the "status" field.
-func (m *TodoMutation) SetStatus(bs int32) {
-	m.status = &bs
+func (m *TodoMutation) SetStatus(i int32) {
+	m.status = &i
 	m.addstatus = nil
 }
 
@@ -363,12 +363,12 @@ func (m *TodoMutation) OldStatus(ctx context.Context) (v int32, err error) {
 	return oldValue.Status, nil
 }
 
-// AddStatus adds bs to the "status" field.
-func (m *TodoMutation) AddStatus(bs int32) {
+// AddStatus adds i to the "status" field.
+func (m *TodoMutation) AddStatus(i int32) {
 	if m.addstatus != nil {
-		*m.addstatus += bs
+		*m.addstatus += i
 	} else {
-		m.addstatus = &bs
+		m.addstatus = &i
 	}
 }
 

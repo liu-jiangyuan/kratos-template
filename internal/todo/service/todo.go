@@ -2,17 +2,12 @@ package service
 
 import (
 	"context"
-	"errors"
-	"io"
-	"strings"
 
 	v1 "github.com/liu-jiangyuan/kratos-template/api/todo/v1"
 	"github.com/liu-jiangyuan/kratos-template/internal/todo/biz"
 
 	"github.com/google/uuid"
 	"go.einride.tech/aip/fieldmask"
-	"go.einride.tech/aip/filtering"
-	"go.einride.tech/aip/ordering"
 	"go.einride.tech/aip/pagination"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -20,12 +15,27 @@ import (
 
 const (
 	defaultPageSize = 20
+	maxPageSize     = 1000
 )
 
-// TodoService is a todo service.
-type TodoService struct {
-	v1.UnimplementedTodoServiceServer
+// invalidArgument keeps request-parsing failures in the business error channel
+// (HTTP 200 with code=0) instead of leaking library errors as 500.
+func invalidArgument(err error) error {
+	return biz.ErrTodoInvalidArgument.WithCause(err)
+}
 
+func normalizePageSize(size int32) int32 {
+	if size <= 0 {
+		return defaultPageSize
+	}
+	if size > maxPageSize {
+		return maxPageSize
+	}
+	return size
+}
+
+// TodoService implements the generated HTTP handler interface.
+type TodoService struct {
 	uc *biz.TodoUsecase
 }
 
@@ -56,41 +66,15 @@ func (s *TodoService) GetTodo(ctx context.Context, req *v1.GetTodoRequest) (*v1.
 	return convertTodoReply(todo), nil
 }
 
-// ListTodos lists todo items.
+// ListTodos lists todo items in creation order.
 func (s *TodoService) ListTodos(ctx context.Context, req *v1.ListTodosRequest) (*v1.TodoSet, error) {
-	declarations, err := filtering.NewDeclarations(
-		filtering.DeclareStandardFunctions(),
-		filtering.DeclareIdent("id", filtering.TypeString),
-		filtering.DeclareIdent("title", filtering.TypeString),
-		filtering.DeclareIdent("content", filtering.TypeString),
-		filtering.DeclareIdent("completed", filtering.TypeBool),
-		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
-		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
-	)
-	if err != nil {
-		return nil, err
-	}
-	filter, err := filtering.ParseFilter(req, declarations)
-	if err != nil {
-		return nil, err
-	}
 	pageToken, err := pagination.ParsePageToken(req)
 	if err != nil {
-		return nil, err
+		return nil, invalidArgument(err)
 	}
-	orderBy, err := ordering.ParseOrderBy(req)
-	if err != nil {
-		return nil, err
-	}
-	if err := orderBy.ValidateForPaths("id", "title", "created_at", "updated_at"); err != nil {
-		return nil, err
-	}
-	if req.PageSize <= 0 {
-		req.PageSize = defaultPageSize
-	}
+	req.PageSize = normalizePageSize(req.PageSize)
+
 	todos, err := s.uc.ListTodos(ctx,
-		biz.ListFilter(filter),
-		biz.ListOrderBy(orderBy),
 		biz.ListLimit(int(req.PageSize)),
 		biz.ListOffset(int(pageToken.Offset)),
 	)
@@ -113,6 +97,15 @@ func (s *TodoService) ListTodos(ctx context.Context, req *v1.ListTodosRequest) (
 func (s *TodoService) UpdateTodo(ctx context.Context, req *v1.UpdateTodoRequest) (*v1.Todo, error) {
 	if req.GetTodo().GetId() == "" || req.GetUpdateMask() == nil || len(req.GetUpdateMask().GetPaths()) == 0 {
 		return nil, biz.ErrTodoInvalidArgument
+	}
+	// The AIP fieldmask helper silently ignores unknown paths; reject them at
+	// the service boundary so clients get a clear INVALID_ARGUMENT instead.
+	for _, path := range req.GetUpdateMask().GetPaths() {
+		switch path {
+		case "*", "title", "content", "completed":
+		default:
+			return nil, biz.ErrTodoInvalidArgument
+		}
 	}
 	current, err := s.GetTodo(ctx, &v1.GetTodoRequest{Id: req.GetTodo().GetId()})
 	if err != nil {
@@ -138,103 +131,6 @@ func (s *TodoService) DeleteTodo(ctx context.Context, req *v1.DeleteTodoRequest)
 	return &emptypb.Empty{}, nil
 }
 
-// WatchTodos streams todo snapshots from the server to the client.
-func (s *TodoService) WatchTodos(req *v1.WatchTodosRequest, stream v1.TodoService_WatchTodosServer) error {
-	declarations, err := filtering.NewDeclarations(
-		filtering.DeclareStandardFunctions(),
-		filtering.DeclareIdent("id", filtering.TypeString),
-		filtering.DeclareIdent("title", filtering.TypeString),
-		filtering.DeclareIdent("content", filtering.TypeString),
-		filtering.DeclareIdent("completed", filtering.TypeBool),
-		filtering.DeclareIdent("created_at", filtering.TypeTimestamp),
-		filtering.DeclareIdent("updated_at", filtering.TypeTimestamp),
-	)
-	if err != nil {
-		return err
-	}
-	filter, err := filtering.ParseFilter(req, declarations)
-	if err != nil {
-		return err
-	}
-	pageToken, err := pagination.ParsePageToken(req)
-	if err != nil {
-		return err
-	}
-	orderBy, err := ordering.ParseOrderBy(req)
-	if err != nil {
-		return err
-	}
-	if err := orderBy.ValidateForPaths("id", "title", "created_at", "updated_at"); err != nil {
-		return err
-	}
-	if req.PageSize <= 0 {
-		req.PageSize = defaultPageSize
-	}
-	todos, err := s.uc.ListTodos(stream.Context(),
-		biz.ListFilter(filter),
-		biz.ListOrderBy(orderBy),
-		biz.ListLimit(int(req.PageSize)),
-		biz.ListOffset(int(pageToken.Offset)),
-	)
-	if err != nil {
-		return err
-	}
-	for _, todo := range todos {
-		if err := stream.Send(newTodoEvent("snapshot", convertTodoReply(todo))); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// SyncTodos exchanges todo changes in both directions.
-func (s *TodoService) SyncTodos(stream v1.TodoService_SyncTodosServer) error {
-	for {
-		req, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		var event *v1.TodoEvent
-		switch strings.ToLower(req.GetAction()) {
-		case "create":
-			todo, err := s.CreateTodo(stream.Context(), &v1.CreateTodoRequest{Todo: req.GetTodo()})
-			if err != nil {
-				return err
-			}
-			event = newTodoEvent("created", todo)
-		case "update":
-			todo, err := s.UpdateTodo(stream.Context(), &v1.UpdateTodoRequest{
-				Todo:       req.GetTodo(),
-				UpdateMask: req.GetUpdateMask(),
-			})
-			if err != nil {
-				return err
-			}
-			event = newTodoEvent("updated", todo)
-		case "delete":
-			id := req.GetId()
-			if id == "" {
-				id = req.GetTodo().GetId()
-			}
-			if _, err := s.DeleteTodo(stream.Context(), &v1.DeleteTodoRequest{Id: id}); err != nil {
-				return err
-			}
-			event = newTodoEvent("deleted", &v1.Todo{
-				Id:     id,
-				Status: v1.TodoStatus_TODO_STATUS_DELETED,
-			})
-		default:
-			return biz.ErrTodoInvalidArgument
-		}
-		if err := stream.Send(event); err != nil {
-			return err
-		}
-	}
-}
-
 // parseTodoID validates an incoming todo id at the service boundary.
 func parseTodoID(id string) (uuid.UUID, error) {
 	parsed, err := uuid.Parse(id)
@@ -256,14 +152,6 @@ func convertTodo(in *v1.Todo) *biz.Todo {
 		Title:     in.GetTitle(),
 		Content:   in.GetContent(),
 		Completed: in.GetCompleted(),
-	}
-}
-
-func newTodoEvent(action string, todo *v1.Todo) *v1.TodoEvent {
-	return &v1.TodoEvent{
-		Action:    action,
-		Todo:      todo,
-		EventTime: timestamppb.Now(),
 	}
 }
 

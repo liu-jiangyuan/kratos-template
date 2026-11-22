@@ -9,8 +9,6 @@ import (
 
 	"github.com/go-kratos/kratos/v3/errors"
 	"github.com/google/uuid"
-	"go.einride.tech/aip/filtering"
-	"go.einride.tech/aip/ordering"
 )
 
 var (
@@ -18,6 +16,9 @@ var (
 	ErrTodoNotFound = errors.NotFound(v1.ErrorReason_TODO_NOT_FOUND.String(), "todo not found")
 	// ErrTodoInvalidArgument is returned when a todo request is invalid.
 	ErrTodoInvalidArgument = errors.BadRequest(v1.ErrorReason_TODO_INVALID_ARGUMENT.String(), "invalid todo argument")
+	// ErrTodoInternal hides storage/infrastructure failures from callers. The
+	// underlying cause is logged by the repository implementation.
+	ErrTodoInternal = errors.InternalServer("TODO_INTERNAL", "internal todo error")
 )
 
 // TodoStatus is the lifecycle state of a todo. Values match the api enum so
@@ -59,24 +60,8 @@ type ListOption func(*ListOptions)
 
 // ListOptions are todo list query options.
 type ListOptions struct {
-	Filter  filtering.Filter
-	OrderBy ordering.OrderBy
-	Offset  int
-	Limit   int
-}
-
-// ListFilter sets a standard AIP filter.
-func ListFilter(filter filtering.Filter) ListOption {
-	return func(o *ListOptions) {
-		o.Filter = filter
-	}
-}
-
-// ListOrderBy sets a standard AIP order_by value.
-func ListOrderBy(orderBy ordering.OrderBy) ListOption {
-	return func(o *ListOptions) {
-		o.OrderBy = orderBy
-	}
+	Offset int
+	Limit  int
 }
 
 // ListOffset sets an offset.

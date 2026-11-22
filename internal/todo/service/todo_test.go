@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"io"
 	"testing"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 
 	kratoserrors "github.com/go-kratos/kratos/v3/errors"
 	"github.com/google/uuid"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
@@ -206,38 +204,6 @@ func TestTodoServiceListTodosPagination(t *testing.T) {
 	}
 }
 
-func TestTodoServiceListTodosFilterAndOrderByValidation(t *testing.T) {
-	ctx := context.Background()
-	svc := newTestTodoService()
-
-	for _, todo := range []*v1.Todo{
-		{Title: "write docs", Content: "public docs", Completed: true},
-		{Title: "fix bug", Content: "private bug", Completed: false},
-		{Title: "fix api", Content: "public api", Completed: true},
-	} {
-		if _, err := svc.CreateTodo(ctx, &v1.CreateTodoRequest{Todo: todo}); err != nil {
-			t.Fatalf("CreateTodo(%q) error = %v", todo.GetTitle(), err)
-		}
-	}
-
-	// The fake repo ignores filter and order_by; this asserts the service
-	// accepts and forwards them. See internal/todo/model for the SQL translation.
-	reply, err := svc.ListTodos(ctx, &v1.ListTodosRequest{
-		PageSize: 10,
-		Filter:   `title:"fix" AND completed`,
-		OrderBy:  "title desc",
-	})
-	if err != nil {
-		t.Fatalf("ListTodos(filter/order) error = %v", err)
-	}
-	if len(reply.GetTodos()) != 3 {
-		t.Fatalf("ListTodos(filter/order) len = %d, want 3", len(reply.GetTodos()))
-	}
-	if reply.GetTodos()[0].GetTitle() != "write docs" {
-		t.Fatalf("ListTodos(filter/order) first title = %q, want insertion order", reply.GetTodos()[0].GetTitle())
-	}
-}
-
 func TestTodoServiceValidation(t *testing.T) {
 	ctx := context.Background()
 	svc := newTestTodoService()
@@ -261,144 +227,7 @@ func TestTodoServiceValidation(t *testing.T) {
 	if _, err := svc.ListTodos(ctx, &v1.ListTodosRequest{PageToken: "bad-token"}); err == nil {
 		t.Fatal("ListTodos(bad token) error = nil, want error")
 	}
-	if _, err := svc.ListTodos(ctx, &v1.ListTodosRequest{Filter: `unknown:"value"`}); err == nil {
-		t.Fatal("ListTodos(unsupported filter) error = nil, want error")
-	}
-	if _, err := svc.ListTodos(ctx, &v1.ListTodosRequest{OrderBy: "content"}); err == nil {
-		t.Fatal("ListTodos(unsupported order_by) error = nil, want error")
-	}
 	if _, err := svc.DeleteTodo(ctx, &v1.DeleteTodoRequest{Id: missingID}); !kratoserrors.IsNotFound(err) {
 		t.Fatalf("DeleteTodo(missing id) error = %v, want not found", err)
 	}
-}
-
-func TestTodoServiceWatchTodos(t *testing.T) {
-	ctx := context.Background()
-	svc := newTestTodoService()
-
-	for _, todo := range []*v1.Todo{
-		{Title: "open task", Completed: false},
-		{Title: "done task", Completed: true},
-	} {
-		if _, err := svc.CreateTodo(ctx, &v1.CreateTodoRequest{Todo: todo}); err != nil {
-			t.Fatalf("CreateTodo(%q) error = %v", todo.GetTitle(), err)
-		}
-	}
-
-	stream := &watchTodosStream{fakeServerStream: fakeServerStream{ctx: ctx}}
-	if err := svc.WatchTodos(&v1.WatchTodosRequest{
-		PageSize: 10,
-	}, stream); err != nil {
-		t.Fatalf("WatchTodos() error = %v", err)
-	}
-	if len(stream.events) != 2 {
-		t.Fatalf("WatchTodos() events len = %d, want 2", len(stream.events))
-	}
-	if stream.events[0].GetAction() != "snapshot" || stream.events[0].GetTodo().GetTitle() != "open task" {
-		t.Fatalf("WatchTodos() event = %+v, want open snapshot", stream.events[0])
-	}
-}
-
-func TestTodoServiceSyncTodos(t *testing.T) {
-	ctx := context.Background()
-	svc := newTestTodoService()
-
-	// Seed a record so the update and delete actions have a real target.
-	seeded, err := svc.CreateTodo(ctx, &v1.CreateTodoRequest{Todo: &v1.Todo{Title: "seeded todo"}})
-	if err != nil {
-		t.Fatalf("CreateTodo() error = %v", err)
-	}
-
-	stream := &syncTodosStream{
-		fakeServerStream: fakeServerStream{ctx: ctx},
-		requests: []*v1.SyncTodoRequest{
-			{
-				Action: "create",
-				Todo:   &v1.Todo{Title: "streamed todo", Content: "from bidi stream"},
-			},
-			{
-				Action: "update",
-				Todo:   &v1.Todo{Id: seeded.GetId(), Completed: true},
-				UpdateMask: &fieldmaskpb.FieldMask{
-					Paths: []string{"completed"},
-				},
-			},
-			{
-				Action: "delete",
-				Id:     seeded.GetId(),
-			},
-		},
-	}
-
-	if err := svc.SyncTodos(stream); err != nil {
-		t.Fatalf("SyncTodos() error = %v", err)
-	}
-	if got := len(stream.events); got != 3 {
-		t.Fatalf("SyncTodos() events len = %d, want 3", got)
-	}
-	if stream.events[0].GetAction() != "created" || stream.events[0].GetTodo().GetTitle() != "streamed todo" {
-		t.Fatalf("SyncTodos() create event = %+v, want created todo", stream.events[0])
-	}
-	if stream.events[1].GetAction() != "updated" || !stream.events[1].GetTodo().GetCompleted() {
-		t.Fatalf("SyncTodos() update event = %+v, want completed update", stream.events[1])
-	}
-	if stream.events[2].GetAction() != "deleted" || stream.events[2].GetTodo().GetId() != seeded.GetId() {
-		t.Fatalf("SyncTodos() delete event = %+v, want deleted seeded id", stream.events[2])
-	}
-
-	for _, i := range []int{0, 1} {
-		todo := stream.events[i].GetTodo()
-		if todo.GetCreatedAt() == nil || todo.GetCreatedAt().AsTime().IsZero() {
-			t.Errorf("event %d created_at = %v, want the server timestamp", i, todo.GetCreatedAt())
-		}
-		if todo.GetUpdatedAt() == nil || todo.GetUpdatedAt().AsTime().IsZero() {
-			t.Errorf("event %d updated_at = %v, want the server timestamp", i, todo.GetUpdatedAt())
-		}
-	}
-	for i, event := range stream.events {
-		if event.GetEventTime() == nil || event.GetEventTime().AsTime().IsZero() {
-			t.Errorf("event %d event_time = %v, want a timestamp", i, event.GetEventTime())
-		}
-	}
-}
-
-type fakeServerStream struct {
-	ctx context.Context
-}
-
-func (s fakeServerStream) SetHeader(metadata.MD) error  { return nil }
-func (s fakeServerStream) SendHeader(metadata.MD) error { return nil }
-func (s fakeServerStream) SetTrailer(metadata.MD)       {}
-func (s fakeServerStream) Context() context.Context     { return s.ctx }
-func (s fakeServerStream) SendMsg(any) error            { return nil }
-func (s fakeServerStream) RecvMsg(any) error            { return nil }
-
-type watchTodosStream struct {
-	fakeServerStream
-	events []*v1.TodoEvent
-}
-
-func (s *watchTodosStream) Send(event *v1.TodoEvent) error {
-	s.events = append(s.events, event)
-	return nil
-}
-
-type syncTodosStream struct {
-	fakeServerStream
-	requests []*v1.SyncTodoRequest
-	events   []*v1.TodoEvent
-}
-
-func (s *syncTodosStream) Recv() (*v1.SyncTodoRequest, error) {
-	if len(s.requests) == 0 {
-		return nil, io.EOF
-	}
-	req := s.requests[0]
-	s.requests = s.requests[1:]
-	return req, nil
-}
-
-func (s *syncTodosStream) Send(event *v1.TodoEvent) error {
-	s.events = append(s.events, event)
-	return nil
 }

@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+.vscode
+.tools
+bin
+logs
+*.log
+openapi.yaml

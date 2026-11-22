@@ -13,7 +13,6 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	kratoserrors "github.com/go-kratos/kratos/v3/errors"
 	"github.com/google/uuid"
-	"go.einride.tech/aip/ordering"
 	_ "modernc.org/sqlite"
 )
 
@@ -34,13 +33,6 @@ func newTestRepo(t *testing.T) (biz.TodoRepo, *ent.Client) {
 		t.Fatalf("create schema: %v", err)
 	}
 	return NewTodoRepo(data.NewDataWithClient(client)), client
-}
-
-// orderByCreatedAt keeps list assertions deterministic.
-func orderByCreatedAt() biz.ListOption {
-	return biz.ListOrderBy(ordering.OrderBy{
-		Fields: []ordering.Field{{Path: "created_at"}},
-	})
 }
 
 func TestTodoRepoCRUD(t *testing.T) {
@@ -141,7 +133,7 @@ func TestTodoRepoListPagination(t *testing.T) {
 		}
 	}
 
-	firstPage, err := repo.ListTodos(ctx, orderByCreatedAt(), biz.ListLimit(2))
+	firstPage, err := repo.ListTodos(ctx, biz.ListLimit(2))
 	if err != nil {
 		t.Fatalf("ListTodos(first page) error = %v", err)
 	}
@@ -152,7 +144,7 @@ func TestTodoRepoListPagination(t *testing.T) {
 		t.Fatalf("ListTodos(first page) title = %q, want first", firstPage[0].Title)
 	}
 
-	secondPage, err := repo.ListTodos(ctx, orderByCreatedAt(), biz.ListLimit(2), biz.ListOffset(2))
+	secondPage, err := repo.ListTodos(ctx, biz.ListLimit(2), biz.ListOffset(2))
 	if err != nil {
 		t.Fatalf("ListTodos(second page) error = %v", err)
 	}
@@ -204,65 +196,5 @@ func TestTodoRepoListDefaultOrderIsStable(t *testing.T) {
 		if paged[i] != want {
 			t.Fatalf("paged = %v, want creation order %v", paged, titles)
 		}
-	}
-}
-
-// A caller-supplied sort key wins, and id breaks ties so equal keys still page
-// deterministically.
-func TestTodoRepoListOrderByTiesBrokenByID(t *testing.T) {
-	ctx := context.Background()
-	repo, _ := newTestRepo(t)
-
-	// Every row shares one title, so the requested sort key cannot order them.
-	var ids []uuid.UUID
-	for range 4 {
-		created, err := repo.CreateTodo(ctx, &biz.Todo{Title: "same"})
-		if err != nil {
-			t.Fatalf("CreateTodo() error = %v", err)
-		}
-		ids = append(ids, created.ID)
-	}
-
-	got, err := repo.ListTodos(ctx,
-		biz.ListOrderBy(ordering.OrderBy{Fields: []ordering.Field{{Path: "title"}}}),
-		biz.ListLimit(10),
-	)
-	if err != nil {
-		t.Fatalf("ListTodos() error = %v", err)
-	}
-	if len(got) != len(ids) {
-		t.Fatalf("ListTodos() len = %d, want %d", len(got), len(ids))
-	}
-	for i, want := range ids {
-		if got[i].ID != want {
-			t.Fatalf("row %d id = %v, want %v (ties must fall back to id)", i, got[i].ID, want)
-		}
-	}
-}
-
-func TestTodoRepoListOrderByDesc(t *testing.T) {
-	ctx := context.Background()
-	repo, _ := newTestRepo(t)
-
-	for _, title := range []string{"alpha", "beta", "gamma"} {
-		if _, err := repo.CreateTodo(ctx, &biz.Todo{Title: title}); err != nil {
-			t.Fatalf("CreateTodo(%q) error = %v", title, err)
-		}
-	}
-
-	todos, err := repo.ListTodos(ctx,
-		biz.ListOrderBy(ordering.OrderBy{
-			Fields: []ordering.Field{{Path: "title", Desc: true}},
-		}),
-		biz.ListLimit(10),
-	)
-	if err != nil {
-		t.Fatalf("ListTodos(order desc) error = %v", err)
-	}
-	if len(todos) != 3 {
-		t.Fatalf("ListTodos(order desc) len = %d, want 3", len(todos))
-	}
-	if todos[0].Title != "gamma" || todos[2].Title != "alpha" {
-		t.Fatalf("ListTodos(order desc) = %q..%q, want gamma..alpha", todos[0].Title, todos[2].Title)
 	}
 }

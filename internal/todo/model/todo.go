@@ -8,9 +8,16 @@ import (
 	"github.com/liu-jiangyuan/kratos-template/ent/todo"
 	"github.com/liu-jiangyuan/kratos-template/internal/todo/biz"
 
-	"github.com/go-kratos/aip-go/ents"
+	"github.com/go-kratos/kratos/v3/log"
 	"github.com/google/uuid"
 )
+
+// internalError logs the storage failure (keeping request_id/trace_id from ctx)
+// and returns the client-safe domain error.
+func internalError(ctx context.Context, err error) error {
+	log.ErrorContext(ctx, "todo repository error", "err", err)
+	return biz.ErrTodoInternal
+}
 
 // toBiz converts a persisted todo into its domain representation.
 func toBiz(po *ent.Todo) *biz.Todo {
@@ -45,7 +52,7 @@ func (r *todoRepo) FindByID(ctx context.Context, id uuid.UUID) (*biz.Todo, error
 		if ent.IsNotFound(err) {
 			return nil, biz.ErrTodoNotFound
 		}
-		return nil, err
+		return nil, internalError(ctx, err)
 	}
 	return toBiz(po), nil
 }
@@ -58,20 +65,16 @@ func (r *todoRepo) ListTodos(ctx context.Context, opts ...biz.ListOption) ([]*bi
 	if options.Offset < 0 || options.Limit <= 0 {
 		return nil, biz.ErrTodoInvalidArgument
 	}
-	// Offset pagination needs a total order, so id is always appended as the
-	// last sort key: without it rows that tie on the requested field may be
-	// returned in a different order per query, duplicating or skipping records
-	// across pages. UUIDv7 ids are time-ordered, so id alone is a sensible
-	// default when the caller asks for nothing.
+	// UUIDv7 ids are time-ordered, so ordering by id gives a stable creation
+	// order and makes offset pagination deterministic.
 	pos, err := r.data.DB(ctx).Todo.Query().
 		Where(todo.StatusEQ(int32(biz.TodoStatusActive))).
-		Where(ents.ApplyFilter(options.Filter)).
-		Order(ents.ApplyOrderBy(options.OrderBy), todo.ByID()).
+		Order(todo.ByID()).
 		Offset(options.Offset).
 		Limit(options.Limit).
 		All(ctx)
 	if err != nil {
-		return nil, err
+		return nil, internalError(ctx, err)
 	}
 	todos := make([]*biz.Todo, 0, len(pos))
 	for _, po := range pos {
@@ -88,7 +91,7 @@ func (r *todoRepo) CreateTodo(ctx context.Context, t *biz.Todo) (*biz.Todo, erro
 		SetStatus(int32(biz.TodoStatusActive)).
 		Save(ctx)
 	if err != nil {
-		return nil, err
+		return nil, internalError(ctx, err)
 	}
 	return toBiz(po), nil
 }
@@ -105,7 +108,7 @@ func (r *todoRepo) UpdateTodo(ctx context.Context, t *biz.Todo) (*biz.Todo, erro
 		if ent.IsNotFound(err) {
 			return nil, biz.ErrTodoNotFound
 		}
-		return nil, err
+		return nil, internalError(ctx, err)
 	}
 	return toBiz(po), nil
 }
@@ -118,7 +121,7 @@ func (r *todoRepo) DeleteTodo(ctx context.Context, id uuid.UUID) error {
 		SetStatus(int32(biz.TodoStatusDeleted)).
 		Save(ctx)
 	if err != nil {
-		return err
+		return internalError(ctx, err)
 	}
 	if affected == 0 {
 		return biz.ErrTodoNotFound

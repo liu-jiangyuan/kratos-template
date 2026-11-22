@@ -10,8 +10,12 @@ import (
 )
 
 // ProviderSet is the wire provider set for the todo module.
+//
+// The demo uses the in-memory repository so `make run` needs no database. To
+// switch to Ent/Postgres, replace model.NewMemoryTodoRepo with model.NewTodoRepo
+// and add core/data.ProviderSet to cmd/server/wire.go.
 var ProviderSet = wire.NewSet(
-	model.NewTodoRepo,
+	model.NewMemoryTodoRepo,
 	biz.NewTodoUsecase,
 	service.NewTodoService,
 	server.NewRegistrar,

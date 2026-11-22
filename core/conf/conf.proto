@@ -17,15 +17,12 @@ message Server {
     string addr = 2;
     google.protobuf.Duration timeout = 3;
   }
-  message GRPC {
-    string network = 1;
-    string addr = 2;
-    google.protobuf.Duration timeout = 3;
-  }
   HTTP http = 1;
-  GRPC grpc = 2;
 }
 
+// Data is optional. The demo runs with an in-memory repository; uncomment the
+// data section in configs/config.yaml (and wire core/data.ProviderSet) when a
+// concrete project needs a database or Redis.
 message Data {
   message Database {
     // Driver name registered with database/sql, e.g. "postgres", "pgx", "mysql".
