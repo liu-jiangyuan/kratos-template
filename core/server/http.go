@@ -2,6 +2,7 @@ package server
 
 import (
 	"log/slog"
+	stdhttp "net/http"
 
 	"github.com/liu-jiangyuan/kratos-template/core/conf"
 	"github.com/liu-jiangyuan/kratos-template/core/middleware/requestid"
@@ -21,8 +22,13 @@ func NewHTTPServer(c *conf.Server, logger *slog.Logger, registrars []Registrar) 
 		http.ErrorEncoder(ErrorEncoder),
 		http.NotFoundHandler(EnvelopeNotFoundHandler()),
 		http.MethodNotAllowedHandler(EnvelopeMethodNotAllowedHandler()),
+		// Optional HTTP filters (e.g. CORS):
+		// http.Filter(handlers.CORS(...)),
 		http.Middleware(
 			recovery.Recovery(),
+			// Optional tracing / rate-limit / auth middlewares:
+			// tracing.Server(),
+			// ratelimit.Server(),
 			requestid.Server(),
 			logging.Server(logger),
 			validate.Validator(func(req any) error {
@@ -45,6 +51,10 @@ func NewHTTPServer(c *conf.Server, logger *slog.Logger, registrars []Registrar) 
 		opts = append(opts, http.Timeout(c.GetHttp().GetTimeout().AsDuration()))
 	}
 	srv := http.NewServer(opts...)
+	// Built-in liveness probe endpoint for containers/orchestrators.
+	srv.Route("/").GET("/healthz", func(ctx http.Context) error {
+		return ctx.Result(stdhttp.StatusOK, map[string]string{"status": "ok"})
+	})
 	for _, r := range registrars {
 		r.RegisterHTTP(srv)
 	}

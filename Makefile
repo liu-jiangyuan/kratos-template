@@ -297,14 +297,19 @@ run:
 test:
 	go test ./...
 
+.PHONY: test-race
+# run all tests with Go race detector enabled
+test-race:
+	go test -race ./...
+
 .PHONY: fmt
 # format handwritten Go code (generated ent code is intentionally excluded)
 fmt:
-	gofmt -w ./cmd ./core ./internal ./pkg ./test
+	gofmt -w ./cmd ./core ./hack ./internal ./pkg ./test
 
 .PHONY: fmt-check
 fmt-check:
-	@out="$$(gofmt -l ./cmd ./core ./internal ./pkg ./test)"; \
+	@out="$$(gofmt -l ./cmd ./core ./hack ./internal ./pkg ./test)"; \
 	if [ -n "$$out" ]; then echo "gofmt required:"; echo "$$out"; exit 1; fi
 
 .PHONY: check

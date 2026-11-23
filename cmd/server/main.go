@@ -23,9 +23,9 @@ import (
 // go build -ldflags "-X main.Version=x.y.z"
 var (
 	// Name is the name of the compiled software.
-	Name string
+	Name = "server"
 	// Version is the version of the compiled software.
-	Version string
+	Version = "dev"
 	// flagconf is the config flag.
 	flagconf string
 
@@ -58,7 +58,7 @@ func main() {
 	c := config.New(
 		config.WithSource(
 			file.NewSource(flagconf),
-			env.NewSource("KRATOS"),
+			env.NewSource(),
 		),
 	)
 	defer c.Close()

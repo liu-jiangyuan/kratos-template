@@ -8,6 +8,8 @@ import (
 )
 
 // FileLogger appends formatted log records to a local file on disk.
+// For long-running production services, pair this with external logrotate or
+// swap the underlying writer for a rotating writer (e.g. lumberjack).
 type FileLogger struct {
 	*baseLogger
 }

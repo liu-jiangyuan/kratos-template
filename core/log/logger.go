@@ -42,7 +42,7 @@ type Logger interface {
 }
 
 type baseLogger struct {
-	mu        sync.Mutex
+	mu        *sync.Mutex
 	writer    io.Writer
 	closer    io.Closer
 	level     slog.Level
@@ -73,6 +73,7 @@ func newBaseLogger(w io.Writer, closer io.Closer, level slog.Level, formatter Fo
 		formatter = NewFormatter("json", "")
 	}
 	l := &baseLogger{
+		mu:        &sync.Mutex{},
 		writer:    w,
 		closer:    closer,
 		level:     level,
@@ -113,6 +114,7 @@ func (l *baseLogger) WithAttrs(attrs []slog.Attr) slog.Handler {
 	merged = append(merged, l.preAttrs...)
 	merged = append(merged, attrs...)
 	clone := &baseLogger{
+		mu:        l.mu,
 		writer:    l.writer,
 		closer:    l.closer,
 		level:     l.level,
@@ -134,6 +136,7 @@ func (l *baseLogger) WithGroup(name string) slog.Handler {
 	groups = append(groups, l.groups...)
 	groups = append(groups, name)
 	clone := &baseLogger{
+		mu:        l.mu,
 		writer:    l.writer,
 		closer:    l.closer,
 		level:     l.level,
@@ -211,7 +214,11 @@ func New(c *conf.Log) (Logger, func(), error) {
 	)
 	switch driver {
 	case DriverConsole:
-		logger = NewConsoleLogger(os.Stdout, level, formatter, c.GetAddSource())
+		cl := NewConsoleLogger(os.Stdout, level, formatter, c.GetAddSource())
+		if c.GetNoColor() {
+			cl.colorize = false
+		}
+		logger = cl
 	case DriverFile:
 		path := c.GetFile().GetPath()
 		if path == "" {

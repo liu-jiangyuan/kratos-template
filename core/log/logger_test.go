@@ -232,6 +232,9 @@ func TestDatabaseLoggerHTTP(t *testing.T) {
 
 	ctx := kratoslog.ContextWithAttrs(context.Background(), slog.String("request_id", "req-db-777"))
 	logger.Warn(ctx, "slow query detected", "cost_ms", 320)
+	if err := logger.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -244,5 +247,47 @@ func TestDatabaseLoggerHTTP(t *testing.T) {
 	doc := received[0]
 	if doc["msg"] != "slow query detected" || doc["level"] != "WARN" || doc["request_id"] != "req-db-777" {
 		t.Fatalf("unexpected JSON payload sent to database API: %+v", doc)
+	}
+}
+
+func TestDerivedLoggersShareMutex(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewConsoleLogger(&buf, slog.LevelInfo, NewFormatter("json", ""), false)
+	defer logger.Close()
+
+	childA := logger.Slog().With(slog.String("worker", "a"))
+	childB := logger.Slog().WithGroup("grp").With(slog.String("worker", "b"))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func(n int) {
+			defer wg.Done()
+			childA.Info("msg-a", "n", n)
+		}(i)
+		go func(n int) {
+			defer wg.Done()
+			childB.Info("msg-b", "n", n)
+		}(i)
+	}
+	wg.Wait()
+	if buf.Len() == 0 {
+		t.Fatal("expected log output from concurrent derived loggers")
+	}
+}
+
+func TestNewConsoleNoColor(t *testing.T) {
+	logger, cleanup, err := New(&conf.Log{NoColor: true})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer cleanup()
+
+	cl, ok := logger.(*ConsoleLogger)
+	if !ok {
+		t.Fatalf("expected *ConsoleLogger, got %T", logger)
+	}
+	if cl.colorize {
+		t.Fatal("expected colorize=false when NoColor is true")
 	}
 }

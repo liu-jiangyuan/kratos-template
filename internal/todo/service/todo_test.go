@@ -202,6 +202,24 @@ func TestTodoServiceListTodosPagination(t *testing.T) {
 	if secondPage.GetTodos()[0].GetTitle() != "third" {
 		t.Fatalf("ListTodos(second page) title = %q, want third", secondPage.GetTodos()[0].GetTitle())
 	}
+
+	// Exact page size multiple should not emit a next_page_token and should not mutate req.
+	exactReq := &v1.ListTodosRequest{PageSize: 3}
+	exactPage, err := svc.ListTodos(ctx, exactReq)
+	if err != nil {
+		t.Fatalf("ListTodos(exact page) error = %v", err)
+	}
+	if len(exactPage.GetTodos()) != 3 || exactPage.GetNextPageToken() != "" {
+		t.Fatalf("ListTodos(exact page) len=%d next=%q, want len=3 next empty", len(exactPage.GetTodos()), exactPage.GetNextPageToken())
+	}
+
+	defaultReq := &v1.ListTodosRequest{}
+	if _, err := svc.ListTodos(ctx, defaultReq); err != nil {
+		t.Fatalf("ListTodos(default page) error = %v", err)
+	}
+	if defaultReq.PageSize != 0 {
+		t.Fatalf("ListTodos mutated req.PageSize to %d, want 0", defaultReq.PageSize)
+	}
 }
 
 func TestTodoServiceValidation(t *testing.T) {

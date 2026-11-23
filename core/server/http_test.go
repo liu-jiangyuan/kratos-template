@@ -78,6 +78,13 @@ func TestHTTPStatusContract(t *testing.T) {
 		wantMsg    string
 	}{
 		{
+			name:       "healthz returns 200 code 1",
+			method:     http.MethodGet,
+			path:       "/healthz",
+			wantStatus: http.StatusOK,
+			wantCode:   response.CodeSuccess,
+		},
+		{
 			name:       "success is 200 code 1",
 			method:     http.MethodGet,
 			path:       "/ok",

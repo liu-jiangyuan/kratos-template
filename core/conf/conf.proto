@@ -34,6 +34,11 @@ message Data {
     // Create or update tables from the ent schema on startup. Leave false in
     // production and apply migrations as a separate, reviewed step.
     bool auto_migrate = 4;
+    // Connection pool settings (0 uses sensible defaults in core/data).
+    int32 max_open_conns = 5;
+    int32 max_idle_conns = 6;
+    google.protobuf.Duration conn_max_lifetime = 7;
+    google.protobuf.Duration conn_max_idle_time = 8;
   }
   message Redis {
     string network = 1;
@@ -69,4 +74,6 @@ message Log {
   bool add_source = 5;
   File file = 6;
   Database database = 7;
+  // Disable ANSI colors in console output (useful in containers/CI).
+  bool no_color = 8;
 }

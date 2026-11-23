@@ -72,20 +72,30 @@ func (s *TodoService) ListTodos(ctx context.Context, req *v1.ListTodosRequest) (
 	if err != nil {
 		return nil, invalidArgument(err)
 	}
-	req.PageSize = normalizePageSize(req.PageSize)
+	pageSize := normalizePageSize(req.GetPageSize())
 
+	// Fetch one extra item to detect whether another page exists without
+	// emitting a trailing token when total rows is an exact multiple of pageSize.
 	todos, err := s.uc.ListTodos(ctx,
-		biz.ListLimit(int(req.PageSize)),
+		biz.ListLimit(int(pageSize)+1),
 		biz.ListOffset(int(pageToken.Offset)),
 	)
 	if err != nil {
 		return nil, err
 	}
+	hasMore := len(todos) > int(pageSize)
+	if hasMore {
+		todos = todos[:pageSize]
+	}
 	set := &v1.TodoSet{
 		Todos: make([]*v1.Todo, 0, len(todos)),
 	}
-	if len(todos) >= int(req.PageSize) {
-		set.NextPageToken = pageToken.Next(req).String()
+	if hasMore {
+		nextReq := &v1.ListTodosRequest{
+			PageSize:  pageSize,
+			PageToken: req.GetPageToken(),
+		}
+		set.NextPageToken = pageToken.Next(nextReq).String()
 	}
 	for _, todo := range todos {
 		set.Todos = append(set.Todos, convertTodoReply(todo))
@@ -94,6 +104,9 @@ func (s *TodoService) ListTodos(ctx context.Context, req *v1.ListTodosRequest) (
 }
 
 // UpdateTodo updates a todo item.
+// Note: when switching from the demo in-memory repo to a database, wrap
+// read-modify-write in core/data.InTx or apply field-level updates to avoid
+// lost updates under concurrent PATCH requests.
 func (s *TodoService) UpdateTodo(ctx context.Context, req *v1.UpdateTodoRequest) (*v1.Todo, error) {
 	if req.GetTodo().GetId() == "" || req.GetUpdateMask() == nil || len(req.GetUpdateMask().GetPaths()) == 0 {
 		return nil, biz.ErrTodoInvalidArgument

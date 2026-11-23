@@ -4,6 +4,8 @@ import (
 	"context"
 	stdsql "database/sql"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/liu-jiangyuan/kratos-template/core/conf"
 	"github.com/liu-jiangyuan/kratos-template/ent"
@@ -13,6 +15,14 @@ import (
 	"github.com/go-kratos/kratos/v3/log"
 	"github.com/google/wire"
 	_ "github.com/lib/pq"
+)
+
+const (
+	defaultMaxOpenConns    = 25
+	defaultMaxIdleConns    = 5
+	defaultConnMaxLifetime = 30 * time.Minute
+	defaultConnMaxIdleTime = 5 * time.Minute
+	defaultPingTimeout     = 5 * time.Second
 )
 
 // ProviderSet is core data providers.
@@ -35,6 +45,9 @@ func NewDataWithClient(client *ent.Client) *Data {
 // NewData opens the database client and returns it with a cleanup function.
 func NewData(c *conf.Data) (*Data, func(), error) {
 	dc := c.GetDatabase()
+	if dc == nil || strings.TrimSpace(dc.GetSource()) == "" {
+		return nil, nil, fmt.Errorf("data.database.source is required when core/data is enabled")
+	}
 	driverName := dc.GetDriver()
 	if driverName == "" {
 		driverName = dialect.Postgres
@@ -47,6 +60,34 @@ func NewData(c *conf.Data) (*Data, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	maxOpen := int(dc.GetMaxOpenConns())
+	if maxOpen <= 0 {
+		maxOpen = defaultMaxOpenConns
+	}
+	maxIdle := int(dc.GetMaxIdleConns())
+	if maxIdle <= 0 {
+		maxIdle = defaultMaxIdleConns
+	}
+	connMaxLifetime := defaultConnMaxLifetime
+	if dc.GetConnMaxLifetime() != nil && dc.GetConnMaxLifetime().AsDuration() > 0 {
+		connMaxLifetime = dc.GetConnMaxLifetime().AsDuration()
+	}
+	connMaxIdleTime := defaultConnMaxIdleTime
+	if dc.GetConnMaxIdleTime() != nil && dc.GetConnMaxIdleTime().AsDuration() > 0 {
+		connMaxIdleTime = dc.GetConnMaxIdleTime().AsDuration()
+	}
+	sqlDB.SetMaxOpenConns(maxOpen)
+	sqlDB.SetMaxIdleConns(maxIdle)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(connMaxIdleTime)
+
+	pingCtx, cancel := context.WithTimeout(context.Background(), defaultPingTimeout)
+	defer cancel()
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		_ = sqlDB.Close()
+		return nil, nil, fmt.Errorf("ping database: %w", err)
+	}
+
 	db := ent.NewClient(ent.Driver(entsql.OpenDB(sqlDialect, sqlDB)))
 	if dc.GetDebug() {
 		db = db.Debug()

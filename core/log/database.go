@@ -8,10 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
-const defaultHTTPTimeout = 5 * time.Second
+const (
+	defaultHTTPTimeout = 5 * time.Second
+	defaultQueueSize   = 1024
+)
 
 // DatabaseConfig configures the HTTP API log database sink (e.g. Elasticsearch, ZincSearch, Loki).
 type DatabaseConfig struct {
@@ -39,6 +43,11 @@ type httpLogWriter struct {
 	method   string
 	headers  map[string]string
 	client   *http.Client
+
+	mu     sync.Mutex
+	closed bool
+	queue  chan []byte
+	done   chan struct{}
 }
 
 func normalizeJSONPayload(p []byte) []byte {
@@ -64,11 +73,19 @@ func normalizeJSONPayload(p []byte) []byte {
 	return payload
 }
 
-func (w *httpLogWriter) Write(p []byte) (int, error) {
-	payload := normalizeJSONPayload(p)
+func (w *httpLogWriter) start() {
+	go func() {
+		defer close(w.done)
+		for payload := range w.queue {
+			_ = w.send(payload)
+		}
+	}()
+}
+
+func (w *httpLogWriter) send(payload []byte) error {
 	req, err := http.NewRequest(w.method, w.endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return 0, err
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	for k, v := range w.headers {
@@ -76,14 +93,43 @@ func (w *httpLogWriter) Write(p []byte) (int, error) {
 	}
 	resp, err := w.client.Do(req)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("log database HTTP %s %s returned status %d", w.method, w.endpoint, resp.StatusCode)
+		return fmt.Errorf("log database HTTP %s %s returned status %d", w.method, w.endpoint, resp.StatusCode)
 	}
+	return nil
+}
+
+func (w *httpLogWriter) Write(p []byte) (int, error) {
+	payload := append([]byte(nil), normalizeJSONPayload(p)...)
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return 0, fmt.Errorf("log database writer is closed")
+	}
+	select {
+	case w.queue <- payload:
+	default:
+		// Drop when buffer is full so log sink stalls never block request handlers.
+	}
+	w.mu.Unlock()
 	return len(p), nil
+}
+
+func (w *httpLogWriter) Close() error {
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return nil
+	}
+	w.closed = true
+	close(w.queue)
+	w.mu.Unlock()
+	<-w.done
+	return nil
 }
 
 // NewDatabaseLogger creates a Logger that sends each formatted log record via HTTP request
@@ -113,8 +159,11 @@ func NewDatabaseLogger(cfg DatabaseConfig, level slog.Level, formatter Formatter
 		method:   method,
 		headers:  cfg.Headers,
 		client:   client,
+		queue:    make(chan []byte, defaultQueueSize),
+		done:     make(chan struct{}),
 	}
+	w.start()
 	return &DatabaseLogger{
-		baseLogger: newBaseLogger(w, nil, level, formatter, addSource),
+		baseLogger: newBaseLogger(w, w, level, formatter, addSource),
 	}, nil
 }
