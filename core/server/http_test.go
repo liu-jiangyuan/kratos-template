@@ -35,28 +35,21 @@ func (contractRegistrar) RegisterHTTP(s *kratoshttp.Server) {
 	})
 }
 
-func newContractServer(t *testing.T) *httptest.Server {
+func newContractServer(t *testing.T) http.Handler {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewHTTPServer(&conf.Server{}, logger, []Registrar{contractRegistrar{}})
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	return ts
+	return NewHTTPServer(&conf.Server{}, logger, []Registrar{contractRegistrar{}})
 }
 
-func doJSON(t *testing.T, ts *httptest.Server, method, path, accept string) (*http.Response, response.Response) {
+func doJSON(t *testing.T, srv http.Handler, method, path, accept string) (*http.Response, response.Response) {
 	t.Helper()
-	req, err := http.NewRequest(method, ts.URL+path, nil)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
+	req := httptest.NewRequest(method, path, nil)
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, path, err)
-	}
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	resp := rec.Result()
 	defer resp.Body.Close()
 	var envelope response.Response
 	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {

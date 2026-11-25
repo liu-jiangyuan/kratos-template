@@ -71,6 +71,12 @@ func NewConsoleLogger(out io.Writer, level slog.Level, formatter Formatter, addS
 		out = os.Stdout
 	}
 	base := newBaseLogger(out, nil, level, formatter, addSource)
+	if jf, ok := base.formatter.(*jsonFormatter); ok {
+		base.formatter = &jsonFormatter{
+			timeFormat:  jf.timeFormat,
+			levelPrefix: true,
+		}
+	}
 	base.colorize = true
 	return &ConsoleLogger{
 		baseLogger: base,

@@ -27,34 +27,27 @@ type envelope struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-func newTestServer(t *testing.T) *httptest.Server {
+func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
 	repo := model.NewMemoryTodoRepo()
 	svc := service.NewTodoService(biz.NewTodoUsecase(repo))
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := coreserver.NewHTTPServer(&conf.Server{}, logger, []coreserver.Registrar{todoserver.NewRegistrar(svc)})
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	return ts
+	return coreserver.NewHTTPServer(&conf.Server{}, logger, []coreserver.Registrar{todoserver.NewRegistrar(svc)})
 }
 
-func doJSON(t *testing.T, method, url, body string, out any) (int, envelope) {
+func doJSON(t *testing.T, srv http.Handler, method, path, body string, out any) (int, envelope) {
 	t.Helper()
 	var reader io.Reader
 	if body != "" {
 		reader = strings.NewReader(body)
 	}
-	req, err := http.NewRequest(method, url, reader)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
+	req := httptest.NewRequest(method, path, reader)
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("%s %s: %v", method, url, err)
-	}
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	resp := rec.Result()
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -62,7 +55,7 @@ func doJSON(t *testing.T, method, url, body string, out any) (int, envelope) {
 	}
 	var env envelope
 	if err := json.Unmarshal(raw, &env); err != nil {
-		t.Fatalf("%s %s: decode envelope %q: %v", method, url, raw, err)
+		t.Fatalf("%s %s: decode envelope %q: %v", method, path, raw, err)
 	}
 	if out != nil && len(env.Data) > 0 && string(env.Data) != "null" {
 		if err := json.Unmarshal(env.Data, out); err != nil {
@@ -73,10 +66,10 @@ func doJSON(t *testing.T, method, url, body string, out any) (int, envelope) {
 }
 
 func TestTodoHTTPContract(t *testing.T) {
-	ts := newTestServer(t)
+	srv := newTestServer(t)
 
 	var created v1.Todo
-	status, env := doJSON(t, http.MethodPost, ts.URL+"/v1/todos", `{"title":"first","content":"body"}`, &created)
+	status, env := doJSON(t, srv, http.MethodPost, "/v1/todos", `{"title":"first","content":"body"}`, &created)
 	if status != http.StatusOK || env.Code != response.CodeSuccess {
 		t.Fatalf("create: status=%d code=%d message=%q", status, env.Code, env.Message)
 	}
@@ -85,15 +78,15 @@ func TestTodoHTTPContract(t *testing.T) {
 	}
 
 	var got v1.Todo
-	status, env = doJSON(t, http.MethodGet, ts.URL+"/v1/todos/"+created.Id, "", &got)
+	status, env = doJSON(t, srv, http.MethodGet, "/v1/todos/"+created.Id, "", &got)
 	if status != http.StatusOK || env.Code != response.CodeSuccess || got.Id != created.Id {
 		t.Fatalf("get: status=%d code=%d id=%q", status, env.Code, got.Id)
 	}
 
 	var updated v1.Todo
 	// update_mask is a FieldMask query parameter; content must stay unchanged.
-	status, env = doJSON(t, http.MethodPatch,
-		ts.URL+"/v1/todos/"+created.Id+"?update_mask=title",
+	status, env = doJSON(t, srv, http.MethodPatch,
+		"/v1/todos/"+created.Id+"?update_mask=title",
 		`{"title":"renamed","content":"ignored"}`,
 		&updated)
 	if status != http.StatusOK || env.Code != response.CodeSuccess {
@@ -104,13 +97,13 @@ func TestTodoHTTPContract(t *testing.T) {
 	}
 
 	// Business not-found stays HTTP 200 with code=0.
-	status, env = doJSON(t, http.MethodGet, ts.URL+"/v1/todos/"+uuid.Must(uuid.NewV7()).String(), "", nil)
+	status, env = doJSON(t, srv, http.MethodGet, "/v1/todos/"+uuid.Must(uuid.NewV7()).String(), "", nil)
 	if status != http.StatusOK || env.Code != response.CodeFail {
 		t.Fatalf("business not found: status=%d code=%d message=%q", status, env.Code, env.Message)
 	}
 
 	// Malformed request body is a protocol error and keeps 400.
-	status, env = doJSON(t, http.MethodPost, ts.URL+"/v1/todos", "{", nil)
+	status, env = doJSON(t, srv, http.MethodPost, "/v1/todos", "{", nil)
 	if status != http.StatusBadRequest || env.Code != response.CodeFail {
 		t.Fatalf("malformed body: status=%d code=%d message=%q", status, env.Code, env.Message)
 	}

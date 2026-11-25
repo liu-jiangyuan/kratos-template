@@ -176,6 +176,28 @@ func TestFileLogger(t *testing.T) {
 	if !strings.Contains(content, `msg="written to file"`) || !strings.Contains(content, "request_id=req-file-99") {
 		t.Fatalf("unexpected file log content: %q", content)
 	}
+
+	// FileLogger in JSON mode outputs standard single-line JSON with "level" key-value (no "[INFO] " prefix).
+	jsonPath := filepath.Join(tmpDir, "logs", "service.json.log")
+	jsonLogger, err := NewFileLogger(jsonPath, slog.LevelInfo, NewFormatter("json", ""), false)
+	if err != nil {
+		t.Fatalf("NewFileLogger(json) error = %v", err)
+	}
+	jsonLogger.Info(ctx, "json to file", "module", "todo")
+	if err := jsonLogger.Close(); err != nil {
+		t.Fatalf("Close(json) error = %v", err)
+	}
+	jsonRaw, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("ReadFile(json) error = %v", err)
+	}
+	var fileDoc map[string]any
+	if err := json.Unmarshal(jsonRaw, &fileDoc); err != nil {
+		t.Fatalf("expected file JSON log to be pure valid JSON, err = %v, raw = %q", err, string(jsonRaw))
+	}
+	if fileDoc["level"] != "INFO" || fileDoc["msg"] != "json to file" || fileDoc["request_id"] != "req-file-99" {
+		t.Fatalf("unexpected file JSON payload: %+v", fileDoc)
+	}
 }
 
 type roundTripFunc func(req *http.Request) (*http.Response, error)

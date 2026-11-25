@@ -33,7 +33,7 @@
   - `file`：本地文件；
   - `database`：通过 HTTP API 发送到 Elasticsearch / ZincSearch 等。
 - 自定义格式通过 `log.format` 配置，支持 `json`、`text` 或模板字符串（`{time}`、`{level}`、`{request_id}`、`{trace_id}`、`{attrs}` 等）。
-- `json` 模式的每条记录形如 `[INFO] {json}`；`database` driver 会自动提取 level 并写入日志库。
+- `json` 模式下：`console` 输出形如 `[INFO] {json}` 便于终端阅读；`file` 与 `database` 输出标准单行 JSON（含 `"level"` 键值），便于直接采集与入库。
 
 ---
 

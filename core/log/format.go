@@ -130,7 +130,8 @@ func (f *textFormatter) Format(r slog.Record, preAttrs []slog.Attr, groups []str
 }
 
 type jsonFormatter struct {
-	timeFormat string
+	timeFormat  string
+	levelPrefix bool
 }
 
 func (f *jsonFormatter) Format(r slog.Record, preAttrs []slog.Attr, groups []string) ([]byte, error) {
@@ -141,6 +142,9 @@ func (f *jsonFormatter) Format(r slog.Record, preAttrs []slog.Attr, groups []str
 	payload := make(map[string]any, 8+len(preAttrs)+r.NumAttrs())
 	payload["time"] = ts.Format(f.timeFormat)
 	payload["msg"] = r.Message
+	if !f.levelPrefix {
+		payload["level"] = r.Level.String()
+	}
 	if caller := callerString(r.PC); caller != "" {
 		payload["source"] = caller
 	}
@@ -148,9 +152,11 @@ func (f *jsonFormatter) Format(r slog.Record, preAttrs []slog.Attr, groups []str
 		payload[a.Key] = attrToAny(a.Value)
 	}
 	var buf bytes.Buffer
-	buf.WriteByte('[')
-	buf.WriteString(r.Level.String())
-	buf.WriteString("] ")
+	if f.levelPrefix {
+		buf.WriteByte('[')
+		buf.WriteString(r.Level.String())
+		buf.WriteString("] ")
+	}
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(payload); err != nil {
